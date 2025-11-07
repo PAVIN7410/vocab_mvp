@@ -1,14 +1,227 @@
 {% extends "base.html" %}
-{% block title %}Тестовая страница{% endblock %}
+{% block title %}Тест{% endblock %}
 
 {% block content %}
-<h2>Добро пожаловать на тестовую страницу!</h2>
-<p>На этой странице вам будет предложено перевести случайное слово.</p>
-<h3>Слово для перевода: {{ word.text }}</h3>
-<form method="post">
-    {% csrf_token %}
-    <label for="translation">Перевод:</label>
-    <input type="text" id="translation" name="translation" required>
-    <button type="submit">Проверить</button>
-</form>
+<style>
+    .test-container {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .word-card {
+        background: #f8f9fa;
+        padding: 30px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .word-text {
+        font-size: 32px;
+        font-weight: bold;
+        color: #333;
+        margin: 20px 0;
+    }
+    .input-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    .input-wrapper {
+        position: relative;
+        flex: 1;
+    }
+    #translation {
+        width: 100%;
+        padding: 12px 50px 12px 12px;
+        font-size: 18px;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        box-sizing: border-box;
+    }
+    #translation:focus {
+        outline: none;
+        border-color: #007bff;
+    }
+    .mic-button {
+        position: absolute;
+        right: 5px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 5px 10px;
+        color: #666;
+        transition: color 0.3s;
+    }
+    .mic-button:hover {
+        color: #007bff;
+    }
+    .mic-button.listening {
+        color: #dc3545;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .submit-btn {
+        padding: 12px 30px;
+        font-size: 18px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    .submit-btn:hover {
+        background: #0056b3;
+    }
+    .result-message {
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .result-correct {
+        background: #d4edda;
+        color: #155724;
+        border: 2px solid #c3e6cb;
+    }
+    .result-incorrect {
+        background: #f8d7da;
+        color: #721c24;
+        border: 2px solid #f5c6cb;
+    }
+    .result-details {
+        margin-top: 10px;
+        font-size: 16px;
+        font-weight: normal;
+    }
+    .voice-status {
+        text-align: center;
+        margin-top: 10px;
+        color: #666;
+        font-size: 14px;
+        min-height: 20px;
+    }
+</style>
+
+<div class="test-container">
+    <h2>🎯 Тест перевода</h2>
+    
+    {% if result %}
+        <div class="result-message {% if result == 'correct' %}result-correct{% else %}result-incorrect{% endif %}">
+            {% if result == 'correct' %}
+                ✅ Правильно!
+            {% else %}
+                ❌ Неправильно
+            {% endif %}
+            <div class="result-details">
+                <strong>{{ previous_word }}</strong> = <strong>{{ correct_translation }}</strong>
+                {% if result == 'incorrect' %}
+                    <br>Ваш ответ: {{ user_translation }}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+    
+    {% if word %}
+        <div class="word-card">
+            <p>📖 Переведите слово:</p>
+            <div class="word-text">{{ word.text }}</div>
+        </div>
+        
+        <form method="post" id="testForm">
+            {% csrf_token %}
+            <input type="hidden" name="word_id" value="{{ word.id }}">
+            
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <input type="text" 
+                           id="translation" 
+                           name="translation" 
+                           placeholder="Введите перевод..."
+                           autocomplete="off"
+                           required>
+                    <button type="button" 
+                            class="mic-button" 
+                            id="micButton"
+                            title="Голосовой ввод">
+                        🎤
+                    </button>
+                </div>
+                <button type="submit" class="submit-btn">Проверить</button>
+            </div>
+            <div class="voice-status" id="voiceStatus"></div>
+        </form>
+    {% else %}
+        <p style="text-align: center; color: #666;">
+            {{ message }}
+        </p>
+    {% endif %}
+</div>
+
+<script>
+// Голосовой ввод
+const micButton = document.getElementById('micButton');
+const translationInput = document.getElementById('translation');
+const voiceStatus = document.getElementById('voiceStatus');
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    // Настройки распознавания
+    recognition.lang = 'ru-RU'; // Русский язык по умолчанию
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    let isListening = false;
+    
+    micButton.addEventListener('click', () => {
+        if (isListening) {
+            recognition.stop();
+            return;
+        }
+        
+        recognition.start();
+        isListening = true;
+        micButton.classList.add('listening');
+        voiceStatus.textContent = '🎤 Слушаю... Говорите перевод';
+    });
+    
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        translationInput.value = transcript;
+        voiceStatus.textContent = '✅ Распознано: ' + transcript;
+        setTimeout(() => {
+            voiceStatus.textContent = '';
+        }, 3000);
+    };
+    
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        voiceStatus.textContent = '⚠️ Ошибка распознавания: ' + event.error;
+        setTimeout(() => {
+            voiceStatus.textContent = '';
+        }, 3000);
+    };
+    
+    recognition.onend = () => {
+        isListening = false;
+        micButton.classList.remove('listening');
+    };
+} else {
+    micButton.style.display = 'none';
+    console.warn('Голосовой ввод не поддерживается в вашем браузере');
+}
+
+// Автофокус на поле ввода
+if (translationInput) {
+    translationInput.focus();
+}
+</script>
 {% endblock %}

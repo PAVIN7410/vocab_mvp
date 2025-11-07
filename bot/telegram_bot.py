@@ -8,25 +8,28 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
 from googletrans import Translator
-from random import choice
 from dotenv import load_dotenv
 
 # Загружаем .env
 load_dotenv()
 
-# Добавляем корневую директорию в PATH
+# Добавляем корневую директорию проекта в PYTHONPATH
 import sys
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
+PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__) + os.sep + "..")
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # Указываем Django, где искать настройки
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "vocab.settings")
 django.setup()
 
 # Импорты моделей Django
-from vocab.models import TelegramUser, Word
+from vocab.models import TelegramUser
+from words.models import Word
 # Импортируем генератор озвучки
 from bot.voice import synthesize_text_to_mp3
+# Импортируем модуль распознавания речи
+from bot.speech_recognition_helper import recognize_speech_from_ogg
 # Импортируем sync_to_async для работы с Django ORM в асинхронных функциях
 from asgiref.sync import sync_to_async
 
@@ -41,58 +44,71 @@ from aiogram import Router
 
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
+# Регистрируем router
+router = Router()
+dp.include_router(router)
 
-main_menu_buttons = [
-    [types.KeyboardButton(text="Регистрация")],
-    [types.KeyboardButton(text="Ввести слово")],
-    [types.KeyboardButton(text="Тест")],
-    [types.KeyboardButton(text="Настройка времени тестов")],
-    [types.KeyboardButton(text="Начать тест")]
-]
+# Главное меню с inline кнопками
 main_menu_kb = types.InlineKeyboardMarkup(inline_keyboard=[
-    [types.InlineKeyboardButton(text="Регистрация", callback_data="register")],
-    [types.InlineKeyboardButton(text="Ввести слово", callback_data="enter_word")],
-    [types.InlineKeyboardButton(text="Тест", callback_data="test")],
-    [types.InlineKeyboardButton(text="Настройка времени тестов", callback_data="settings")],
-    [types.InlineKeyboardButton(text="Начать тест", callback_data="start_test")]
+    [types.InlineKeyboardButton(text="📝 Ввести слово", callback_data="enter_word")],
+    [types.InlineKeyboardButton(text="🧠 Начать тест", callback_data="start_test")],
+    [types.InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")]
 ])
-translator = Translator()
 
-async def get_random_word():
-    # Asynchronously fetch a random word from the database
-    words = await sync_to_async(list)(Word.objects.all())
-    return choice(words) if words else None
+translator = Translator()
 
 # Словарь для отслеживания состояний пользователей
 user_states = {}
 
 
-router = Router()
-
-@router.callback_query(lambda c: c.data == 'register')
-async def process_register_callback(callback_query: types.CallbackQuery):
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Регистрация прошла успешно!")
+# ============ CALLBACK HANDLERS ============
 
 @router.callback_query(lambda c: c.data == 'enter_word')
 async def process_enter_word_callback(callback_query: types.CallbackQuery):
+    """Обработка кнопки 'Ввести слово'"""
     await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Введите слово для перевода:")
+    user_states[callback_query.from_user.id] = "waiting_for_word"
+    await bot.send_message(
+        callback_query.from_user.id,
+        "📝 Напишите или 🎤 произнесите слово:\n\n"
+        "🔸 Пример: hello\n"
+        "🔸 Пример: привет\n"
+        "🎤 Или отправьте голосовое сообщение!\n\n"
+        "Я переведу слово и озвучу его на оба языка!"
+    )
 
-@router.callback_query(lambda c: c.data == 'test')
-async def process_test_callback(callback_query: types.CallbackQuery):
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Тестирование началось! \nОжидайте, тест загружается...")
 
 @router.callback_query(lambda c: c.data == 'settings')
 async def process_settings_callback(callback_query: types.CallbackQuery):
+    """Обработка кнопки 'Настройки'"""
     await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Настройка времени тестов.")
+    await bot.send_message(
+        callback_query.from_user.id,
+        "⚙️ Настройки времени:\n\n"
+        "По умолчанию повторения назначаются через 2 часа.\n"
+        "При правильном ответе интервал увеличивается.\n"
+        "При неправильном - сбрасывается.",
+        reply_markup=main_menu_kb
+    )
+
 
 @router.callback_query(lambda c: c.data == 'start_test')
 async def process_start_test_callback(callback_query: types.CallbackQuery):
+    """Обработка кнопки 'Начать тест'"""
     await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Начинаем тест!")
+    # Создаем fake message объект для передачи в start_quiz
+    from aiogram.types import User, Chat
+    fake_message = Message(
+        message_id=callback_query.message.message_id,
+        date=callback_query.message.date,
+        chat=callback_query.message.chat,
+        from_user=callback_query.from_user
+    )
+    await start_quiz(fake_message)
+
+
+# ============ COMMAND HANDLERS ============
+
 @router.message(Command(commands=["start"]))
 async def start_handler(message: Message):
     """Обработчик команды /start"""
@@ -113,9 +129,9 @@ async def start_handler(message: Message):
             
         welcome_text += (
             "📚 Основные функции:\n"
-            "• Просто напишите слово - я его переведу и озвучу\n"
-            "• Используйте кнопки ниже для навигации\n"
-            "• Команда /say [слово] - озвучивание\n\n"
+            "• Нажмите 'Ввести слово' - я переведу и озвучу\n"
+            "• Нажмите 'Начать тест' - проверьте свои знания\n"
+            "• 🎤 Можно отправлять голосовые сообщения!\n\n"
             "Выберите действие:"
         )
         
@@ -129,56 +145,63 @@ async def start_handler(message: Message):
         )
 
 
-@router.message(Command(commands=["test"]))
-async def handle_test(message: Message):
-    word = await get_random_word()
-    if word is None:
-        await message.answer("Нет доступных слов для теста.", reply_markup=main_menu_kb)
-        return
+# ============ VOICE MESSAGE HANDLER ============
 
-    translated_word = translator.translate(word.text, src='en', dest='ru').text
-    await message.answer(f"Слово для перевода: {word.text}\nПеревод: {translated_word}", reply_markup=main_menu_kb)
-    # Создаем голосовое
-    await send_voice_from_text(bot, message, translated_word)
-async def say_handler(message: Message):
-    print(f"/say command used with args: {message.get_args()}")
-    """Обработчик команды /say [слово]"""
-    text = message.get_args()
+@router.message(lambda message: message.voice is not None)
+async def handle_voice_message(message: Message):
+    """Обработка голосовых сообщений"""
+    user_state = user_states.get(message.from_user.id)
     
-    if not text:
+    # Проверяем, что пользователь в состоянии ожидания
+    if user_state not in ["waiting_for_word"] and not (isinstance(user_state, dict) and user_state.get("state") == "waiting_for_answer"):
         await message.answer(
-            "🎤 Команда /say для озвучивания слов\n\n"
-            "Пожалуйста, введите слово после команды /say и отправьте.",
-            reply_markup=types.ForceReply(selective=True)  # force the input to contain /say
+            "🎤 Чтобы использовать голосовой ввод:\n\n"
+            "• Нажмите 'Ввести слово' и отправьте голосовое\n"
+            "• Или 'Начать тест' и ответьте голосом",
+            reply_markup=main_menu_kb
         )
         return
-
-    # Озвучиваем слово (английское на английском, русское на русском)
+    
+    processing_msg = await message.answer("🎤 Распознаю речь...")
+    
     try:
-        # Определяем язык
-        def has_cyrillic(text):
-            return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
+        # Скачиваем голосовое сообщение
+        file = await bot.get_file(message.voice.file_id)
         
-        lang = 'ru' if has_cyrillic(text) else 'en'
+        # Создаем временный файл
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as temp_file:
+            temp_path = temp_file.name
+            await bot.download_file(file.file_path, temp_path)
         
-        audio_path = synthesize_text_to_mp3(text, lang=lang)
+        # Распознаем речь (пробуем оба языка)
         try:
-            voice_file = types.FSInputFile(path=audio_path)
-            await message.answer_voice(
-                voice=voice_file,
-                caption=f"🔊 {text} ({lang.upper()})"
-            )
-        finally:
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-                
+            recognized_text = await recognize_speech_from_ogg(temp_path, language="ru-RU")
+        except:
+            recognized_text = await recognize_speech_from_ogg(temp_path, language="en-US")
+        
+        # Удаляем временный файл
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        await processing_msg.edit_text(f"✅ Распознано: **{recognized_text}**")
+        
+        # Обрабатываем распознанный текст
+        if user_state == "waiting_for_word":
+            user_states.pop(message.from_user.id, None)
+            await handle_word_input(message, recognized_text)
+        elif isinstance(user_state, dict) and user_state.get("state") == "waiting_for_answer":
+            await handle_quiz_answer(message, recognized_text)
+            
     except Exception as e:
-        await message.answer(
-            f"⚠️ Ошибка озвучивания: {str(e)[:100]}...",
+        await processing_msg.edit_text(
+            f"⚠️ Ошибка распознавания: {str(e)[:100]}...\n\n"
+            "Попробуйте говорить четче или напишите текстом.",
             reply_markup=main_menu_kb
         )
 
 
+# ============ MESSAGE HANDLER ============
 
 @router.message()
 async def handle_message(message: Message):
@@ -187,70 +210,6 @@ async def handle_message(message: Message):
         return
 
     text = message.text.strip()
-    
-    # Обрабатываем кнопки меню
-    if text == "Регистрация":
-        # Очищаем состояние
-        user_states.pop(message.from_user.id, None)
-        await start_handler(message)  # Переиспользуем логику /start
-        return
-    
-    elif text == "🏠 Главное меню":
-        # Очищаем состояние и возвращаем в главное меню
-        user_states.pop(message.from_user.id, None)
-        await message.answer(
-            "🏠 Главное меню",
-            reply_markup=main_menu_kb
-        )
-        return
-    
-    elif text == "Тест":
-        user_states.pop(message.from_user.id, None)
-        await show_test_menu(message)
-        return
-        
-    elif text == "Настройка времени тестов":
-        user_states.pop(message.from_user.id, None)
-        await message.answer(
-            "⚙️ Настройки времени:\n\n"
-            "По умолчанию повторения назначаются через 2 часа.\n"
-            "При правильном ответе интервал увеличивается.\n"
-            "При неправильном - сбрасывается.",
-            reply_markup=main_menu_kb
-        )
-        return
-        
-    elif text == "Ввести слово":
-        # Очищаем состояние
-        user_states.pop(message.from_user.id, None)
-        await message.answer(
-            "📝 Напишите слово для перевода и озвучивания:\n\n"
-            "🔸 Пример: hello\n"
-            "🔸 Пример: привет\n\n"
-            "Я переведу слово и озвучу его на оба языка!",
-            reply_markup=types.ReplyKeyboardMarkup(
-                keyboard=[
-                    [types.KeyboardButton(text="🏠 Главное меню")]
-                ],
-                resize_keyboard=True
-            )
-        )
-        # Устанавливаем состояние ожидания слова
-        user_states[message.from_user.id] = "waiting_for_word"
-        return
-        
-    elif text == "Начать тест":
-        user_states.pop(message.from_user.id, None)
-        await start_quiz(message)
-        return
-        
-    elif text == "Отменить тест":
-        user_states.pop(message.from_user.id, None)
-        await message.answer(
-            "❌ Тест отменён.",
-            reply_markup=main_menu_kb
-        )
-        return
     
     # Проверяем состояние пользователя
     user_state = user_states.get(message.from_user.id)
@@ -269,12 +228,15 @@ async def handle_message(message: Message):
     # Если это неизвестная команда/сообщение, показываем помощь
     await message.answer(
         "🤔 Не понял команду.\n\n"
-        "🔹 Для перевода слова нажмите 'Ввести слово'\n"
-        "🔹 Для озвучивания используйте /say [слово]\n"
-        "🔹 Выберите нужное действие из меню:",
+        "🔹 Нажмите 'Ввести слово' для перевода\n"
+        "🔹 Нажмите 'Начать тест' для тестирования\n"
+        "🔹 🎤 Можно отправлять голосовые сообщения\n\n"
+        "Выберите нужное действие из меню:",
         reply_markup=main_menu_kb
     )
 
+
+# ============ HELPER FUNCTIONS ============
 
 async def handle_word_input(message: Message, text: str):
     """Обработка ввода слова"""
@@ -287,7 +249,7 @@ async def handle_word_input(message: Message, text: str):
         telegram_user = await sync_to_async(TelegramUser.objects.get)(telegram_id=message.from_user.id)
     except TelegramUser.DoesNotExist:
         await message.answer(
-            "Вы не зарегистрированы. Нажмите 'Регистрация' или введите /start",
+            "Вы не зарегистрированы. Используйте /start для регистрации.",
             reply_markup=main_menu_kb
         )
         return
@@ -297,12 +259,8 @@ async def handle_word_input(message: Message, text: str):
 
     # Переводим слово
     try:
-        # Определяем язык и переводим
-        print(f"Debug: Starting translation for word: {text}")
-        
         detection = translator.detect(text)
         detected_lang = detection.lang
-        print(f"Debug: Detected language: {detected_lang}")
         
         if detected_lang == 'ru':
             translation = translator.translate(text, src='ru', dest='en')
@@ -311,16 +269,13 @@ async def handle_word_input(message: Message, text: str):
             
         word_text = text
         word_translation = translation.text
-        print(f"Debug: Translation completed: {word_text} -> {word_translation}")
             
         # Проверяем что перевод не пустой
         if not word_translation or not word_translation.strip():
             raise Exception("Пустой перевод")
             
     except Exception as e:
-        print(f"Debug: Translation error: {e}")
         await processing_msg.edit_text(
-            "⚠️ Не удалось перевести слово: {str(e)[:50]}...\n\nПопробуйте с другим словом или проверьте подключение к интернету.",
             f"⚠️ Не удалось перевести слово: {str(e)[:50]}...\n\nПопробуйте с другим словом.",
             reply_markup=main_menu_kb
         )
@@ -337,94 +292,52 @@ async def handle_word_input(message: Message, text: str):
     
     # Озвучиваем оригинальное слово
     try:
-        print(f"Debug: Starting audio generation for original word: {word_text}")
         orig_lang = 'ru' if detected_lang == 'ru' else 'en'
         audio_path_orig = synthesize_text_to_mp3(word_text, lang=orig_lang)
-        print(f"Debug: Audio file created: {audio_path_orig}")
         voice_file_orig = types.FSInputFile(path=audio_path_orig)
         await message.answer_voice(
             voice=voice_file_orig,
             caption=f"🔊 Оригинал: {word_text} ({orig_lang.upper()})"
         )
-        print(f"Debug: Original audio sent successfully")
         if os.path.exists(audio_path_orig):
             os.remove(audio_path_orig)
     except Exception as audio_error:
-        print(f"Debug: Audio error for original: {audio_error}")
         await message.answer(f"⚠️ Ошибка озвучивания оригинала: {str(audio_error)[:30]}...")
                 
     # Озвучиваем перевод
     try:
-        print(f"Debug: Starting audio generation for translation: {word_translation}")
         trans_lang = 'ru' if detected_lang != 'ru' else 'en'
         audio_path_trans = synthesize_text_to_mp3(word_translation, lang=trans_lang)
-        print(f"Debug: Translation audio file created: {audio_path_trans}")
         voice_file_trans = types.FSInputFile(path=audio_path_trans)
         await message.answer_voice(
             voice=voice_file_trans,
             caption=f"🔊 Перевод: {word_translation} ({trans_lang.upper()})"
         )
-        print(f"Debug: Translation audio sent successfully")
         if os.path.exists(audio_path_trans):
             os.remove(audio_path_trans)
     except Exception as audio_error:
-        print(f"Debug: Audio error for translation: {audio_error}")
         await message.answer(f"⚠️ Ошибка озвучивания перевода: {str(audio_error)[:30]}...")
     
     # Сохраняем в БД (в фоне)
     try:
-        print(f"Debug: Starting database save for word: {word_text}")
         from datetime import datetime, timedelta
         from django.utils import timezone
+        
+        # Определяем исходный язык для сохранения
+        source_lang = 'ru' if detected_lang == 'ru' else 'en'
         
         await sync_to_async(Word.objects.get_or_create)(
             user=telegram_user,
             text=word_text,
-            defaults={'translation': word_translation, 'next_review': timezone.now() + timedelta(hours=2)}
+            defaults={
+                'translation': word_translation,
+                'source_lang': source_lang,
+                'next_review': timezone.now() + timedelta(hours=2)
+            }
         )
-        print(f"Debug: Word saved to database successfully")
     except Exception as db_error:
         # Не показываем ошибку пользователю
         print(f"Ошибка сохранения: {db_error}")
-
-
-async def show_test_menu(message: Message):
-    """Показывает меню тестов"""
-    try:
-        telegram_user = await sync_to_async(TelegramUser.objects.get)(telegram_id=message.from_user.id)
-        word_count = await sync_to_async(Word.objects.filter(user=telegram_user).count)()
-        
-        if word_count == 0:
-            await message.answer(
-                "📚 У вас пока нет слов для тестирования.\n"
-                "Добавьте несколько слов перед началом теста.",
-                reply_markup=main_menu_kb
-            )
-            return
-            
-        test_menu_kb = types.ReplyKeyboardMarkup(
-            keyboard=[
-                [types.KeyboardButton(text="Начать тест")],
-                [types.KeyboardButton(text="🏠 Главное меню")]
-            ],
-            resize_keyboard=True
-        )
-        
-        await message.answer(
-            f"🧠 Тестирование\n\n"
-            f"📊 Слов в словаре: {word_count}\n"
-            f"✅ Доступно для тестирования\n\n"
-            "Нажмите 'Начать тест' чтобы начать!",
-            reply_markup=test_menu_kb
-        )
-        
-    except TelegramUser.DoesNotExist:
-        await message.answer(
-            "Вы не зарегистрированы. Нажмите 'Регистрация'.",
-            reply_markup=main_menu_kb
-        )
-
-
 
 
 async def start_quiz(message: Message):
@@ -433,16 +346,29 @@ async def start_quiz(message: Message):
         telegram_user = await sync_to_async(TelegramUser.objects.get)(telegram_id=message.from_user.id)
         words = await sync_to_async(list)(Word.objects.filter(user=telegram_user))
         
-        if len(words) < 2:
-            await message.answer(
-                "📚 Нужно минимум 2 слова для теста.\n"
-                "Добавьте ещё несколько!",
+        if len(words) < 1:
+            await bot.send_message(
+                message.chat.id,
+                "📚 Нужно минимум 1 слово для теста.\n"
+                "Добавьте несколько слов!",
+                reply_markup=main_menu_kb
+            )
+            return
+        
+        # Фильтруем слова, где оригинал и перевод НЕ совпадают
+        valid_words = [w for w in words if w.text.lower().strip() != w.translation.lower().strip()]
+        
+        if len(valid_words) < 1:
+            await bot.send_message(
+                message.chat.id,
+                "📚 Нет подходящих слов для теста.\n"
+                "Добавьте слова, которые переводятся по-разному!",
                 reply_markup=main_menu_kb
             )
             return
             
-        # Простой тест - показываем случайное слово
-        random_word = random.choice(words)
+        # Простой тест - показываем случайное слово из валидных
+        random_word = random.choice(valid_words)
         
         # Определяем язык слова для правильного озвучивания
         def has_cyrillic(text):
@@ -457,36 +383,35 @@ async def start_quiz(message: Message):
             "word": random_word.text
         }
         
-        await message.answer(
+        await bot.send_message(
+            message.chat.id,
             f"🧠 Тест начался!\n\n"
-            f"📝 Как переводится слово:\n"
+            f"📖 Переведите слово:\n\n"
             f"**{random_word.text}**\n\n"
-            "Напишите перевод:",
-            reply_markup=types.ReplyKeyboardMarkup(
-                keyboard=[
-                    [types.KeyboardButton(text="Отменить тест")],
-                    [types.KeyboardButton(text="🏠 Главное меню")]
-                ],
-                resize_keyboard=True
-            )
+            "Напишите перевод:"
         )
         
         # Озвучиваем слово на правильном языке
         try:
             audio_path = synthesize_text_to_mp3(random_word.text, lang=word_lang)
             voice_file = types.FSInputFile(path=audio_path)
-            await message.answer_voice(
+            await bot.send_voice(
+                message.chat.id,
                 voice=voice_file,
                 caption=f"🔊 Прослушайте: {random_word.text}"
             )
             if os.path.exists(audio_path):
                 os.remove(audio_path)
         except Exception as audio_error:
-            await message.answer(f"⚠️ Ошибка озвучивания: {str(audio_error)[:30]}...")
+            await bot.send_message(
+                message.chat.id,
+                f"⚠️ Ошибка озвучивания: {str(audio_error)[:30]}..."
+            )
         
     except TelegramUser.DoesNotExist:
-        await message.answer(
-            "Вы не зарегистрированы. Нажмите 'Регистрация'.",
+        await bot.send_message(
+            message.chat.id,
+            "Вы не зарегистрированы. Используйте /start.",
             reply_markup=main_menu_kb
         )
 
@@ -521,18 +446,13 @@ async def handle_quiz_answer(message: Message, text: str):
 
 
 async def main():
-    print("Bot is starting...")
+    print("🤖 Bot is starting...")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, skip_updates=True)
     except asyncio.CancelledError:
+        print("⚠️ Polling cancelled.")
         pass
-        print("Polling cancelled.")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-

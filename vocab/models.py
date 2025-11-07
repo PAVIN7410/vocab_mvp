@@ -61,20 +61,3 @@ class Repetition(models.Model):
 
 
 
-class Word(models.Model):
-    text = models.CharField(max_length=100)
-    translation = models.CharField(max_length=100)
-    next_review = models.DateTimeField()
-    user = models.ForeignKey(
-        'TelegramUser',
-        on_delete=models.CASCADE,
-        related_name='vocab_words'  # ✅ Уникальное имя для этой связи
-    )
-
-    def __str__(self):
-        return self.text
-
-
-
-
-

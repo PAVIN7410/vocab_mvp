@@ -150,42 +150,19 @@
         
         async function playAudio(wordId, type) {
             try {
-                // Получаем текст слова со страницы
-                let textToCheck = '';
+                let url;
                 
                 if (type === 'word') {
-                    // Оригинальное слово в заголовке
-                    const wordElement = document.querySelector('h1');
-                    if (wordElement) {
-                        textToCheck = wordElement.textContent.trim();
-                    }
+                    // Озвучиваем оригинальное слово
+                    url = `/words/${wordId}/audio/`;
                 } else if (type === 'translation') {
-                    // Перевод - ищем в тексте после "Перевод:"
-                    const translationDiv = document.querySelector('.detail-item:nth-child(2)');
-                    if (translationDiv) {
-                        const fullText = translationDiv.textContent;
-                        // Вынимаем текст после "Перевод:"
-                        const translationMatch = fullText.match(/Перевод:\s*(.+)/);
-                        if (translationMatch) {
-                            textToCheck = translationMatch[1].trim();
-                        }
-                    }
+                    // Озвучиваем перевод
+                    url = `/words/${wordId}/audio-translation/`;
                 }
                 
-                console.log(`[DEBUG] Озвучиваем ${type}: "${textToCheck}"`);
+                console.log(`[DEBUG] Запрашиваем аудио: ${url}`);
                 
-                // Определяем язык по содержимому
-                const lang = detectLanguage(textToCheck);
-                console.log(`[DEBUG] Определен язык: ${lang}`);
-                
-                // Параметры с правильным языком
-                const params = new URLSearchParams({
-                    type: type,
-                    lang: lang,
-                    tld: 'com'
-                });
-                
-                const response = await fetch(`/words/${wordId}/audio/?${params}`);
+                const response = await fetch(url);
                 if (response.ok) {
                     const audioBlob = await response.blob();
                     const audioUrl = URL.createObjectURL(audioBlob);
@@ -197,8 +174,7 @@
                     
                     await audio.play();
                 } else {
-                    const errorData = await response.json();
-                    alert('Ошибка при загрузке аудио: ' + errorData.error);
+                    alert('Ошибка при загрузке аудио');
                 }
             } catch (error) {
                 console.error('Ошибка:', error);

@@ -1,47 +1,51 @@
 # vocab/views.py
-from .models import Word
+from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
+from .models import TelegramUser, Card, Repetition
+from words.models import Word
+from .serializers import TelegramUserSerializer, CardSerializer
 from gtts import gTTS
-from django.http import HttpResponse
+from random import choice
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import TelegramUser, Card, Repetition
-from .serializers import TelegramUserSerializer, CardSerializer
-from django.contrib.auth.models import User
-from django.http import JsonResponse
 from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .models import TelegramUser
+from django.contrib.auth.models import User
 
-from .models import Word
-from random import choice
-from django.shortcuts import render
-
-
-
-from django.shortcuts import render
-from django.http import HttpResponse
-from .models import Word
-from random import choice
 
 def test_view(request):
+    """Страница теста - показывает случайное слово и проверяет ответ"""
     words = Word.objects.all()
     if not words.exists():
-        return HttpResponse("Нет доступных слов для тестирования.")
+        return render(request, 'test_page.html', {'word': None, 'message': 'Нет доступных слов для тестирования.'})
+    
+    # Обработка POST-запроса (проверка ответа)
+    if request.method == 'POST':
+        word_id = request.POST.get('word_id')
+        user_translation = request.POST.get('translation', '').strip().lower()
+        
+        try:
+            word = Word.objects.get(pk=word_id)
+            correct_translation = word.translation.strip().lower()
+            
+            # Проверка правильности ответа
+            is_correct = user_translation == correct_translation
+            
+            # Получаем новое случайное слово для следующего теста
+            next_word = choice(words)
+            
+            return render(request, 'test_page.html', {
+                'word': next_word,
+                'result': 'correct' if is_correct else 'incorrect',
+                'previous_word': word.text,
+                'correct_translation': word.translation,
+                'user_translation': request.POST.get('translation', '').strip()
+            })
+        except Word.DoesNotExist:
+            pass
+    
+    # GET-запрос - показываем случайное слово
     word = choice(words)
-    return render(request, 'test_page.html', {'word': word})
-
-
-
-
-
-
-
-
-def test_view(request):
-    words = Word.objects.all()
-    word = choice(words) if words.exists() else None
     return render(request, 'test_page.html', {'word': word})
 
 @api_view(['POST'])

@@ -13,6 +13,7 @@ class Word(models.Model):
     )
     text = models.CharField(max_length=255)
     translation = models.CharField(max_length=255)
+    source_lang = models.CharField(max_length=10, default='en', help_text='Language of the original word (en/ru)')
     next_review = models.DateTimeField(default=timezone.now)
     interval = models.IntegerField(default=1)
     repetitions = models.IntegerField(default=0)

@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect
-from .models import Word
+from words.models import Word
 from .forms import WordForm
 # Assuming google-cloud-translate is used instead
 from google.cloud import translate_v2 as translate

@@ -30,6 +30,7 @@ from googletrans import Translator
 import json
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from vocab.models import TelegramUser
 
 def register_user(request):
     if request.method == 'POST':
@@ -123,6 +124,64 @@ class WordDeleteView(DeleteView):
 def tts_view(request, pk):
     word = Word.objects.get(pk=pk)
     return JsonResponse({'text': word.text})
+
+
+def word_audio_view(request, pk):
+    """Генерирует аудио для слова"""
+    try:
+        word = Word.objects.get(pk=pk)
+        
+        # Используем сохраненный язык, если есть
+        if hasattr(word, 'source_lang') and word.source_lang:
+            lang = word.source_lang
+        else:
+            # Определяем язык по символам
+            def has_cyrillic(text):
+                return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
+            
+            lang = 'ru' if has_cyrillic(word.text) else 'en'
+        
+        # Генерируем аудио
+        tts = gTTS(text=word.text, lang=lang)
+        
+        # Создаем HTTP response с аудио
+        response = HttpResponse(content_type='audio/mpeg')
+        tts.write_to_fp(response)
+        return response
+        
+    except Word.DoesNotExist:
+        return HttpResponse('Слово не найдено', status=404)
+    except Exception as e:
+        return HttpResponse(f'Ошибка: {str(e)}', status=500)
+
+
+def word_translation_audio_view(request, pk):
+    """Генерирует аудио для перевода слова"""
+    try:
+        word = Word.objects.get(pk=pk)
+        
+        # Определяем язык перевода (противоположный оригиналу)
+        if hasattr(word, 'source_lang') and word.source_lang:
+            trans_lang = 'ru' if word.source_lang == 'en' else 'en'
+        else:
+            def has_cyrillic(text):
+                return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
+            
+            # Если оригинал на русском, перевод на английском
+            trans_lang = 'en' if has_cyrillic(word.text) else 'ru'
+        
+        # Генерируем аудио
+        tts = gTTS(text=word.translation, lang=trans_lang)
+        
+        # Создаем HTTP response с аудио
+        response = HttpResponse(content_type='audio/mpeg')
+        tts.write_to_fp(response)
+        return response
+        
+    except Word.DoesNotExist:
+        return HttpResponse('Слово не найдено', status=404)
+    except Exception as e:
+        return HttpResponse(f'Ошибка: {str(e)}', status=500)
 
 
 @csrf_exempt
