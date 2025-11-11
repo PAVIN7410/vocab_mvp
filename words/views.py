@@ -1,12 +1,5 @@
-def test_view(request):
-    words = Word.objects.all()
-    if words.exists():
-        word = random.choice(words)
-        return render(request, 'test_page.html', {'word': word.text})
-    else:
-        return render(request, 'test_page.html', {'message': 'No words available. Please add words first.'})
-
-# words/views.py
+### words/views.py
+import io
 from django.views.generic import (
     ListView,
     DetailView,
@@ -14,6 +7,9 @@ from django.views.generic import (
     UpdateView,
     DeleteView
 )
+from django.shortcuts import get_object_or_404
+from io import BytesIO
+import logging
 from .models import Word
 from django.urls import reverse_lazy
 from gtts import gTTS
@@ -25,7 +21,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import JsonResponse
-from .models import TelegramUser
 from googletrans import Translator
 import json
 from django.views.decorators.csrf import csrf_exempt
@@ -47,6 +42,18 @@ def register_user(request):
         else:
             return JsonResponse({'status': 'exists'})
     return JsonResponse({'error': 'Invalid method'}, status=405)
+
+
+def test_view(request):
+    words = Word.objects.all()
+    if words.exists():
+        word = random.choice(words)
+        return render(request, 'test_page.html', {'word': word.text})
+    else:
+        return render(request, 'test_page.html', {'message': 'No words available. Please add words first.'})
+
+
+
 
 
 class RegisterUser(APIView):
@@ -119,69 +126,6 @@ class WordDeleteView(DeleteView):
     model = Word
     success_url = '/words/'
     template_name = 'word_confirm_delete.html'
-
-
-def tts_view(request, pk):
-    word = Word.objects.get(pk=pk)
-    return JsonResponse({'text': word.text})
-
-
-def word_audio_view(request, pk):
-    """Генерирует аудио для слова"""
-    try:
-        word = Word.objects.get(pk=pk)
-        
-        # Используем сохраненный язык, если есть
-        if hasattr(word, 'source_lang') and word.source_lang:
-            lang = word.source_lang
-        else:
-            # Определяем язык по символам
-            def has_cyrillic(text):
-                return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
-            
-            lang = 'ru' if has_cyrillic(word.text) else 'en'
-        
-        # Генерируем аудио
-        tts = gTTS(text=word.text, lang=lang)
-        
-        # Создаем HTTP response с аудио
-        response = HttpResponse(content_type='audio/mpeg')
-        tts.write_to_fp(response)
-        return response
-        
-    except Word.DoesNotExist:
-        return HttpResponse('Слово не найдено', status=404)
-    except Exception as e:
-        return HttpResponse(f'Ошибка: {str(e)}', status=500)
-
-
-def word_translation_audio_view(request, pk):
-    """Генерирует аудио для перевода слова"""
-    try:
-        word = Word.objects.get(pk=pk)
-        
-        # Определяем язык перевода (противоположный оригиналу)
-        if hasattr(word, 'source_lang') and word.source_lang:
-            trans_lang = 'ru' if word.source_lang == 'en' else 'en'
-        else:
-            def has_cyrillic(text):
-                return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
-            
-            # Если оригинал на русском, перевод на английском
-            trans_lang = 'en' if has_cyrillic(word.text) else 'ru'
-        
-        # Генерируем аудио
-        tts = gTTS(text=word.translation, lang=trans_lang)
-        
-        # Создаем HTTP response с аудио
-        response = HttpResponse(content_type='audio/mpeg')
-        tts.write_to_fp(response)
-        return response
-        
-    except Word.DoesNotExist:
-        return HttpResponse('Слово не найдено', status=404)
-    except Exception as e:
-        return HttpResponse(f'Ошибка: {str(e)}', status=500)
 
 
 @csrf_exempt
@@ -284,53 +228,76 @@ def translate_word(request):
             }, status=500)
 
 
-def generate_audio(request, pk):
-    """Генерирует аудио файл для произношения слова"""
+
+logger = logging.getLogger(__name__)
+
+def generate_audio(request, pk, text_type='word'):
+    word = get_object_or_404(Word, pk=pk)
+
+    # Выбираем текст
+    if text_type == 'word':
+        text = word.text
+    else:
+        text = word.translation
+
+    text = text.strip()
+    if not text:
+        return HttpResponse("Пустой текст", status=400)
+
+    # Определяем язык
+    def detect_language(text):
+        text = text.lower()
+        if any('а' <= c <= 'я' or c == 'ё' for c in text):
+            return 'ru'
+        if any('a' <= c <= 'z' for c in text):
+            return 'en'
+        return 'en'
+
+    lang = detect_language(text)
+
     try:
-        word = Word.objects.get(pk=pk)
-        
-        # Получаем параметры из запроса
-        requested_lang = request.GET.get('lang', 'en')  # язык с фронтенда
-        text_type = request.GET.get('type', 'word')  # word или translation
-        tld = request.GET.get('tld', 'com')  # для разных акцентов
-        
-        # Определяем текст для озвучивания
-        if text_type == 'translation':
-            text_to_speak = word.translation
-        else:
-            text_to_speak = word.text
-            
-        # Проверяем язык по содержимому текста
-        def has_cyrillic(text):
-            return bool([c for c in text if 'а' <= c.lower() <= 'я' or c.lower() in 'ёщ'])
-        
-        # Определяем правильный язык на основе содержимого
-        if has_cyrillic(text_to_speak):
-            actual_lang = 'ru'
-        else:
-            actual_lang = 'en'
-            
-        print(f"[DEBUG AUDIO] Text: '{text_to_speak}', Requested lang: {requested_lang}, Actual lang: {actual_lang}")
-            
-        from bot.voice import synthesize_text_to_mp3_advanced
-        
-        # Генерируем аудио с правильным языком
-        audio_path = synthesize_text_to_mp3_advanced(text_to_speak, lang=actual_lang, tld=tld)
-        
-        # Открываем файл и возвращаем как HTTP ответ
-        with open(audio_path, 'rb') as audio_file:
-            response = HttpResponse(audio_file.read(), content_type='audio/mpeg')
-            response['Content-Disposition'] = f'attachment; filename="{text_to_speak[:20]}.mp3"'
-            return response
-            
-    except Word.DoesNotExist:
-        return JsonResponse({'error': 'Word not found'}, status=404)
+        tts = gTTS(text=text, lang=lang)
+        audio_io = BytesIO()
+        tts.write_to_fp(audio_io)
+        audio_io.seek(0)
+
+        response = HttpResponse(audio_io.read(), content_type='audio/mpeg')
+        response['Content-Disposition'] = f'inline; filename="{text_type}.mp3"'
+        return response
     except Exception as e:
-        return JsonResponse({'error': f'Audio generation failed: {str(e)}'}, status=500)
-    finally:
-        # Удаляем временный файл
-        if 'audio_path' in locals():
-            import os
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
+        logger.error(f"TTS error: {e}")
+        return HttpResponse(f"Ошибка TTS: {e}", status=500)
+
+
+
+def speak_text(request):
+    """
+    Озвучивает любой текст (для формы добавления слова)
+    Пример: /words/speak/?text=hello&lang=en
+    """
+    text = request.GET.get('text', '').strip()
+    lang = request.GET.get('lang', 'en')  # по умолчанию английский
+
+    if not text:
+        return HttpResponse(status=400)
+
+    # Определяем язык по тексту, если не указан
+    if lang == 'auto':
+        lang = 'ru' if any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in text) else 'en'
+
+    try:
+        # Создаём аудио
+        tts = gTTS(text=text, lang=lang)
+        audio_io = io.BytesIO()
+        tts.write_to_fp(audio_io)
+        audio_io.seek(0)
+
+        # Отправляем как MP3
+        response = HttpResponse(audio_io, content_type='audio/mpeg')
+        response['Content-Disposition'] = 'inline'
+        return response
+    except Exception as e:
+        print(f"Ошибка TTS: {e}")
+        return HttpResponse(status=500)
+
 

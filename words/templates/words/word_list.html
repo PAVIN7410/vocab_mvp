@@ -16,7 +16,12 @@
         </div>
         <div>
           <a href="{% url 'word-detail' word.pk %}" class="btn btn-sm btn-info">Просмотр</a>
-          <a href="{% url 'word-tts' word.pk %}" download class="btn btn-sm btn-success">🔊</a>
+
+
+
+          <!-- Кнопки озвучки -->
+          <button class="btn btn-sm btn-success" onclick="playAudio({{ word.id }}, 'word')" title="Озвучить слово">🔊</button>
+          <button class="btn btn-sm btn-secondary" onclick="playAudio({{ word.id }}, 'translation')" title="Озвучить перевод">🔊</button>
         </div>
       </li>
     {% endfor %}
@@ -26,4 +31,22 @@
 {% endif %}
 
 <a href="{% url 'word-create' %}" class="btn btn-primary mt-3">Добавить слово</a>
+
+<!-- Скрипт для озвучки -->
+<script>
+function playAudio(wordId, type) {
+    let url;
+    if (type === 'word') {
+        url = `{% url 'word-audio' pk=0 %}`.replace('0', wordId);
+    } else {
+        url = `{% url 'word-translation-audio' pk=0 %}`.replace('0', wordId);
+    }
+    const audio = new Audio(url);
+    audio.play().catch(e => {
+        console.error("Ошибка воспроизведения:", e);
+        alert("Не удалось воспроизвести аудио.");
+    });
+}
+</script>
+
 {% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📊 Прогресс</h1>
+
+<!-- Фильтры -->
+<div class="filters mb-4">
+    <a href="?difficulty=beginner" class="btn btn-sm btn-outline-primary">Начальный</a>
+    <a href="?difficulty=intermediate" class="btn btn-sm btn-outline-secondary">Средний</a>
+    <a href="?difficulty=advanced" class="btn btn-sm btn-outline-success">Продвинутый</a>
+    <a href="." class="btn btn-sm btn-outline-dark">Все</a>
+</div>
+
+<!-- Общая статистика -->
+<div class="stats mb-4">
+    <p><strong>Всего карточек:</strong> {{ total_cards }}</p>
+    <p><strong>Слова для повторения:</strong> {{ due_cards }}</p>
+</div>
+
+<!-- Статистика по уровням -->
+<h3>По уровням сложности:</h3>
+<ul>
+    {% for level, data in stats_by_level.items %}
+    <li>
+        <strong>{{ data.label }}:</strong> {{ data.count }} карточек
+    </li>
+    {% endfor %}
+</ul>
+
+<!-- Рекомендации (Исправлено) -->
+<div class="recommendations mt-4">
+    <h4>💡 Рекомендации:</h4>
+
+    {% comment %} Сначала обрабатываем приоритетную информацию о необходимости повторения {% endcomment %}
+    {% if due_cards > 0 %}
+        <p>🔥 У тебя {{ due_cards }} слов для повторения — не забывай про SM-2!</p>
+    {% else %}
+        <p>🎉 Нет слов для повторения — отличная работа!</p>
+    {% endif %}
+
+    {% comment %} Затем даем дополнительные советы по уровням {% endcomment %}
+
+    {% if stats_by_level.beginner.count > 0 and stats_by_level.beginner.count < 10 %}
+        <p>Повтори начальные слова — их немного, но важно закрепить базу.</p>
+    {% endif %}
+
+    {% comment %}
+        Исправлена синтаксическая ошибка в названии переменной ('status' -> 'stats')
+        и логическая ошибка в условии сравнения.
+    {% endcomment %}
+    {% if stats_by_level.intermediate.count > stats_by_level.beginner.count and stats_by_level.intermediate.count > 0 %}
+        <p>Удели больше внимания среднему уровню — он растёт быстрее базы.</p>
+    {% endif %}
+
+</div>
+
+{% endblock %}
+

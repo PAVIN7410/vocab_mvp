@@ -1,3 +1,6 @@
+
+<!-- vocab_mvp/templates/test_page.html -->
+
 {% extends "base.html" %}
 {% block title %}Тест{% endblock %}
 
@@ -107,6 +110,26 @@
         font-size: 14px;
         min-height: 20px;
     }
+
+        .word-controls {
+        text-align: center;
+        margin: 15px 0;
+    }
+    .play-button {
+        font-size: 24px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #007bff;
+        transition: color 0.3s;
+    }
+    .play-button:hover {
+        color: #0056b3;
+    }
+    .play-button:disabled {
+        color: #ccc;
+        cursor: not-allowed;
+    }
 </style>
 
 <div class="test-container">
@@ -132,6 +155,16 @@
         <div class="word-card">
             <p>📖 Переведите слово:</p>
             <div class="word-text">{{ word.text }}</div>
+
+                        <!-- Кнопка озвучки -->
+            <div class="word-controls">
+               <button
+                    class="play-button"
+                    onclick="playWordAudio({{ word.id }})"
+                    title="Озвучить слово">
+                    🔊
+               </button>
+            </div>
         </div>
         
         <form method="post" id="testForm">
@@ -165,6 +198,16 @@
 </div>
 
 <script>
+// ✅ ЕДИНСТВЕННАЯ функция озвучки
+function playWordAudio(wordId) {
+    const url = `/words/${wordId}/audio/`;  // ✅ Теперь использует РАБОЧИЙ URL
+    const audio = new Audio(url);
+    audio.play().catch(e => {
+        console.error("Ошибка воспроизведения:", e);
+        alert("Не удалось воспроизвести аудио.");
+    });
+}
+
 // Голосовой ввод
 const micButton = document.getElementById('micButton');
 const translationInput = document.getElementById('translation');
@@ -173,55 +216,49 @@ const voiceStatus = document.getElementById('voiceStatus');
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-    
-    // Настройки распознавания
-    recognition.lang = 'ru-RU'; // Русский язык по умолчанию
+    recognition.lang = 'ru-RU';
     recognition.continuous = false;
     recognition.interimResults = false;
-    
+
     let isListening = false;
-    
+
     micButton.addEventListener('click', () => {
         if (isListening) {
             recognition.stop();
             return;
         }
-        
         recognition.start();
         isListening = true;
         micButton.classList.add('listening');
         voiceStatus.textContent = '🎤 Слушаю... Говорите перевод';
     });
-    
+
     recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         translationInput.value = transcript;
         voiceStatus.textContent = '✅ Распознано: ' + transcript;
-        setTimeout(() => {
-            voiceStatus.textContent = '';
-        }, 3000);
+        setTimeout(() => voiceStatus.textContent = '', 3000);
     };
-    
+
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        voiceStatus.textContent = '⚠️ Ошибка распознавания: ' + event.error;
-        setTimeout(() => {
-            voiceStatus.textContent = '';
-        }, 3000);
+        voiceStatus.textContent = '⚠️ Ошибка: ' + event.error;
+        setTimeout(() => voiceStatus.textContent = '', 3000);
     };
-    
+
     recognition.onend = () => {
         isListening = false;
         micButton.classList.remove('listening');
     };
 } else {
     micButton.style.display = 'none';
-    console.warn('Голосовой ввод не поддерживается в вашем браузере');
 }
 
-// Автофокус на поле ввода
+// Автофокус
 if (translationInput) {
     translationInput.focus();
 }
 </script>
+
+
 {% endblock %}

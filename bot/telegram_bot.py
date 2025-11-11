@@ -1,14 +1,15 @@
 #### vocab_mvp/bot/telegram_bot.py
 
-import os
 import asyncio
-import django
+import os
 import random
+
+import django
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
-from googletrans import Translator
 from dotenv import load_dotenv
+from googletrans import Translator
 
 # Загружаем .env
 load_dotenv()
@@ -22,15 +23,17 @@ if PROJECT_ROOT not in sys.path:
 # Указываем Django, где искать настройки
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "vocab.settings")
 django.setup()
+from django.utils import timezone
 
-# Импорты моделей Django
-from vocab.models import TelegramUser
-from words.models import Word
-# Импортируем генератор озвучки
-from bot.voice import synthesize_text_to_mp3
+# Импортируем модели
 # Импортируем модуль распознавания речи
+
+from vocab.models import TelegramUser, Card, Repetition
+from words.models import Word
+
+# Импортируем утилиты
+from bot.voice import synthesize_text_to_mp3
 from bot.speech_recognition_helper import recognize_speech_from_ogg
-# Импортируем sync_to_async для работы с Django ORM в асинхронных функциях
 from asgiref.sync import sync_to_async
 
 # Получаем токен
@@ -97,7 +100,6 @@ async def process_start_test_callback(callback_query: types.CallbackQuery):
     """Обработка кнопки 'Начать тест'"""
     await bot.answer_callback_query(callback_query.id)
     # Создаем fake message объект для передачи в start_quiz
-    from aiogram.types import User, Chat
     fake_message = Message(
         message_id=callback_query.message.message_id,
         date=callback_query.message.date,
@@ -443,6 +445,98 @@ async def handle_quiz_answer(message: Message, text: str):
             f"💪 Попробуйте ещё раз позже!",
             reply_markup=main_menu_kb
         )
+
+# telegram_bot.py
+
+@router.message(Command(commands=["review"]))
+async def review_handler(message: Message):
+    try:
+        telegram_user = await sync_to_async(TelegramUser.objects.get)(telegram_id=message.from_user.id)
+    except TelegramUser.DoesNotExist:
+        await message.answer("Вы не зарегистрированы. Используйте /start.", reply_markup=main_menu_kb)
+        return
+
+    # Находим карточки, готовые к повторению
+    due_repetitions = await sync_to_async(list)(Repetition.objects.filter(card__owner=telegram_user,next_review__lte=timezone.now()).select_related('card')[:1]
+    )
+
+    if not due_repetitions:
+        await message.answer("Нет слов для повторения. Молодец!", reply_markup=main_menu_kb)
+        return
+
+    repetition = due_repetitions[0]
+    card = repetition.card
+
+    # Сохраняем состояние
+    user_states[message.from_user.id] = {
+        "state": "waiting_for_review_answer",
+        "card_id": card.id,
+        "correct_answer": card.translation.lower().strip(),
+        "word": card.word
+    }
+
+    await message.answer(
+        f"🧠 Повторение:\n\n"
+        f"📖 Переведите слово:\n\n"
+        f"**{card.word}**\n\n"
+        "Напишите перевод:",
+        reply_markup=types.ReplyKeyboardMarkup(
+            keyboard=[[types.KeyboardButton(text="Отменить повторение")]],
+            resize_keyboard=True
+        )
+    )
+
+    # Озвучиваем слово
+    try:
+        lang = 'ru' if any('а' <= c <= 'я' for c in card.word.lower()) else 'en'
+        audio_path = synthesize_text_to_mp3(card.word, lang=lang)
+        voice_file = types.FSInputFile(path=audio_path)
+        await message.answer_voice(voice=voice_file, caption="🔊 Слово")
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка озвучки: {str(e)[:30]}...")
+
+
+async def handle_quiz_answer(message: Message, text: str):
+    user_state = user_states.get(message.from_user.id, {})
+    state_type = user_state.get("state")
+
+    if state_type not in ["waiting_for_answer", "waiting_for_review_answer"]:
+        return
+
+    correct_answer = user_state.get("correct_answer", "")
+    original_word = user_state.get("word", "")
+    card_id = user_state.get("card_id")
+
+    # Очищаем состояние
+    user_states.pop(message.from_user.id, None)
+
+    user_answer = text.lower().strip()
+
+    # Определяем качество
+    quality = 5 if user_answer == correct_answer else 1
+
+    # Обновляем Repetition
+    if card_id:
+        try:
+            card = await sync_to_async(Card.objects.get)(id=card_id)
+            repetition = await sync_to_async(lambda: card.repetition)()
+            repetition.schedule_review(quality)
+        except Exception as e:
+            print(f"Ошибка обновления повторения: {e}")
+
+    # Ответ пользователю
+    if user_answer == correct_answer:
+        result_text = f"✅ **Правильно!**\n\n📝 {original_word} — {correct_answer}\n🎉 Отличная работа!"
+    else:
+        result_text = f"❌ **Неправильно!**\n\n📝 {original_word} — **{correct_answer}**\n💭 Ваш ответ: {user_answer}\n💪 Попробуйте ещё раз позже!"
+
+    await message.answer(result_text, reply_markup=main_menu_kb)
+
+
+
+
 
 
 async def main():
