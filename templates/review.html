@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>🔁 Повторение слов</h1>
+
+{% if message %}
+    <p><strong>{{ message }}</strong></p>
+{% elif error %}
+    <p style="color: red;">{{ error }}</p>
+{% else %}
+    <div class="card">
+        {% if card.image %}
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="{{ card.image.url }}" alt="{{ card.word }}" style="max-width: 300px; height: auto; border-radius: 8px;">
+            </div>
+        {% endif %}
+        <p>
+            <strong>Слово:</strong> {{card.word}}
+            <button type="button" class="btn-audio" onclick="playAudio('{{ card.word }}')">🔊</button>
+        </p>
+<p>
+    <strong>Перевод:</strong>
+    <span id="translation" style="color: gray; transition: color 0.3s;">??? (нажмите "Показать")</span>
+    <button type="button" class="btn-audio" onclick="playAudio('{{ card.translation }}')">🔊</button>
+</p>
+
+<button type="button" onclick="
+    document.getElementById('translation').textContent = '{{ card.translation }}';
+    document.getElementById('translation').style.color = 'black';
+">Показать перевод</button>
+
+
+
+    </div>
+
+    <p><strong>Осталось повторить:</strong> {{ due_count }} слов</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <p>Оцените, насколько легко вы вспомнили:</p>
+        <button type="submit" name="quality" value="1">1 — Совсем не помнил</button>
+        <button type="submit" name="quality" value="2">2 — С трудом</button>
+        <button type="submit" name="quality" value="3">3 — Хорошо</button>
+        <button type="submit" name="quality" value="4">4 — Отлично</button>
+    </form>
+{% endif %}
+
+<a href="/progress/">← Назад к прогрессу</a>
+
+<script>
+function playAudio(text) {
+    if (!text) return;
+    // Определяем язык
+    const lang = /[а-яё]/i.test(text) ? 'ru' : 'en';
+    const url = `/words/speak/?text=${encodeURIComponent(text)}&lang=${lang}`;
+    const audio = new Audio(url);
+    audio.play().catch(e => console.error('Ошибка воспроизведения:', e));
+}
+</script>
+
+<style>
+.btn-audio {
+    background: none;
+    border: none;
+    font-size: 1.2em;
+    cursor: pointer;
+    margin-left: 4px;
+}
+.btn-audio:hover {
+    transform: scale(1.2);
+}
+</style>
+
+{% endblock %}
+

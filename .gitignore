@@ -1,0 +1,32 @@
+# Python
+# Virtual env
+venv/
+.venv/
+ENV/
+env/
+.env/
+venv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+
+# DB, logs, env
+db.sqlite3
+*.log
+bot.log
+*.pyc
+*.pyo
+*.pyd
+*.env
+
+# Системные файлы
+*~
+```
+.aider*
+.env

@@ -1,0 +1,18 @@
+<!-- words/templates/words/word_confirm_delete.html -->
+{% extends "words/base.html" %}
+
+{% block title %}Удаление слова{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body text-center">
+    <h3>Вы уверены, что хотите удалить слово <strong>"{{ object.text }}"</strong>?</h3>
+    <form method="post" class="mt-3">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Да, удалить</button>
+      <a href="{% url 'word-list' %}" class="btn btn-secondary ms-2">Нет, вернуться</a>
+    </form>
+  </div>
+</div>
+{% endblock %}
+

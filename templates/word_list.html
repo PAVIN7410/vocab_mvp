@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Мои слова</h1>
+    
+    <a href="{% url 'word-create' %}" class="btn btn-primary">Добавить слово</a>
+    
+    {% if words %}
+        <div class="word-list">
+        {% for word in words %}
+            <div class="word-item">
+                {% if word.image %}
+                    <img src="{{ word.image.url }}" alt="{{ word.text }}" class="word-image">
+                {% endif %}
+                <div class="word-content">
+                    <strong>{{ word.text }}</strong> — {{ word.translation }}
+
+                    <br>
+
+                    <small>Следующее повторение: {{word.next_review|date:"d.m.Y H:i"}}</small>
+                </div>
+                <div class="word-actions">
+                    <a href="{% url 'word-detail' word.pk %}" class="btn">просмотр</a>
+                    <button onclick="playAudio({{ word.pk }})" class="btn btn-audio" title="Прослушать">🔊</button>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    {% else %}
+        <p>Слов пока нет. <a href="{% url 'word-create' %}">Добавьте первое!</a></p>
+    {% endif %}
+    
+    <style>
+        .word-list {
+            margin-top: 20px;
+        }
+        .word-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+        .word-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 5px;
+            flex-shrink: 0;
+        }
+        .word-content {
+            flex-grow: 1;
+        }
+        .word-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            text-decoration: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #f5f5f5;
+            color: #333;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #e5e5e5;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        .btn-audio {
+            font-size: 16px;
+        }
+    </style>
+    
+    <script>
+        async function playAudio(wordId) {
+            try {
+                const response = await fetch(`/words/${wordId}/audio/`);
+                if (response.ok) {
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                    
+                    await audio.play();
+                } else {
+                    alert('Ошибка при загрузке аудио');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('Ошибка воспроизведения аудио');
+            }
+        }
+    </script>
+{% endblock %}

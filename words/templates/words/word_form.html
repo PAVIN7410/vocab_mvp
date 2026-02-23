@@ -1,0 +1,56 @@
+<!-- words/templates/words/word_form.html -->
+{% extends "words/base.html" %}
+
+{% block title %}{% if object %}Редактировать слово{% else %}Добавить слово{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    {% if object %}
+      ✏️ Редактировать слово
+    {% else %}
+      ➕ Добавить новое слово
+    {% endif %}
+  </div>
+  <div class="card-body">
+
+       <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn btn-primary">Сохранить</button>
+      <a href="{% url 'word-list' %}" class="btn btn-secondary ms-2">Отмена</a>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const textField = document.getElementById('id_text');
+    const translationField = document.getElementById('id_translation');
+
+    if (!textField || !translationField) return;
+
+    textField.addEventListener('input', function () {
+        const text = this.value.trim();
+        if (text && !translationField.value.trim()) {
+            fetch('/words/translate/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.translation) {
+                    translationField.value = data.translation;
+                }
+            })
+            .catch(err => console.warn('Translation API error:', err));
+        }
+    });
+});
+</script>

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>📊 Прогресс обучения</h1>
+    <p class="text-muted">Общая статистика ваших знаний</p>
+
+    <hr>
+
+    <!-- Статистика по уровням сложности -->
+    <div class="card bg-light mb-4">
+        <div class="card-body">
+            <h3 class="card-title h5">📈 Распределение по уровням:</h3>
+            <ul class="list-group list-group-flush bg-transparent">
+                {% for level, data in stats_by_level.items %}
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                    <strong>{{ data.label }}:</strong>
+                    <span class="badge bg-primary rounded-pill">{{ data.count }} карточек</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Рекомендации и SM-2 -->
+    <div class="recommendations p-3 border rounded shadow-sm">
+        <h4 class="h5">💡 Рекомендации:</h4>
+
+        {% if due_cards > 0 %}
+            <div class="alert alert-warning mb-0">
+                🔥 У вас <b>{{ due_cards }}</b> слов для повторения — пора зайти в бота и применить алгоритм SM-2!
+            </div>
+        {% else %}
+            <div class="alert alert-success mb-0">
+                🎉 Все слова выучены! На сегодня повторений нет — отличная работа!
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-4">
+        <a href="{% url 'review' %}" class="btn btn-outline-dark">← Назад к повторению на сайте</a>
+    </div>
+</div>
+{% endblock %}

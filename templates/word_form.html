@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Добавить слово</h1>
+    
+    <div class="instructions">
+        <h3>📝 Инструкция:</h3>
+        <ol>
+            <li>Введите слово на английском или русском языке</li>
+            <li>Перевод появится автоматически через 1.5 сек</li>
+            <li>Используйте кнопки для ручного управления</li>
+            <li>Картинка сгенерируется автоматически после сохранения</li>
+        </ol>
+    </div>
+
+    <form method="post" id="word-form">{% csrf_token %}
+        <div>
+            <label for="id_text">Text:</label>
+            <div class="input-group">
+                <input type="text" name="text" id="id_text" maxlength="255" required>
+                <button type="button" id="lang-toggle" title="Переключить язык">🇷🇺</button>
+                <button type="button" id="voice-btn" title="Голосовой ввод">🎤</button>
+                <button type="button" id="play-word-audio" title="Озвучить слово">🔊</button>
+            </div>
+            <small id="voice-status" class="voice-status"></small>
+        </div>
+
+        <div>
+            <label for="id_translation">Translation:</label>
+            <div class="input-group">
+                <input type="text" name="translation" id="id_translation" maxlength="255" required>
+                <button type="button" id="play-translation-audio" title="Озвучить перевод">🔊</button>
+            </div>
+        </div>
+
+        <button type="submit">Сохранить</button>
+    </form>
+
+
+    <style>
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        voice-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        voice-btn:hover {
+            background: #218838;
+        }
+        voice-btn:active, #voice-btn.recording {
+            background: #dc3545;
+        }
+
+        .voice-status {
+            color: #666;
+            font-style: italic;
+        }
+        #translate-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #translate-btn:hover {
+            background: #0056b3;
+        }
+        #translate-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        button[type="submit"] {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button[type="submit"]:hover {
+            background: #218838;
+        }
+        .instructions {
+            background: #e9ecef;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .instructions ol {
+            margin-bottom: 0;
+        }
+    </style>
+
+    <script>
+document.addEventListener('DOMContentLoaded', function() {
+    const textInput = document.getElementById('id_text');
+    const translationInput = document.getElementById('id_translation');
+    const voiceBtn = document.getElementById('voice-btn');
+    const voiceStatus = document.getElementById('voice-status');
+    const playWordAudio = document.getElementById('play-word-audio');
+    const playTranslationAudio = document.getElementById('play-translation-audio');
+    const langToggle = document.getElementById('lang-toggle'); // ← Добавь эту строку!
+
+    // --- ГОЛОСОВОЙ ВВОД ---
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let currentLang = 'ru-RU'; // 🌐 Язык по умолчанию
+
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = currentLang; // 🔊 Устанавливаем язык
+
+        recognition.onstart = () => {
+            voiceBtn.classList.add('recording');
+            voiceBtn.textContent = '🟤';
+            voiceStatus.textContent = 'Говорите...';
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            textInput.value = transcript;
+            voiceStatus.textContent = `Распознано: "${transcript}"`;
+            textInput.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        recognition.onerror = (event) => {
+            voiceStatus.textContent = `Ошибка: ${event.error}`;
+        };
+
+        recognition.onend = () => {
+            voiceBtn.classList.remove('recording');
+            voiceBtn.textContent = '🎤';
+            setTimeout(() => {
+                if (voiceStatus.textContent.includes('Распознано')) {
+                    voiceStatus.textContent = '';
+                }
+            }, 3000);
+        };
+
+        voiceBtn.addEventListener('click', () => {
+            recognition.lang = currentLang; // 🔄 Перед стартом — обновляем язык
+            recognition.start();
+        });
+    } else {
+        voiceBtn.style.display = 'none';
+        voiceStatus.textContent = 'Голосовой ввод не поддерживается';
+    }
+
+    // --- ПЕРЕКЛЮЧЕНИЕ ЯЗЫКА ---
+    if (langToggle) {
+        langToggle.addEventListener('click', () => {
+            if (currentLang === 'ru-RU') {
+                currentLang = 'en-US';
+                langToggle.textContent = '🇺🇸';
+                langToggle.title = 'Переключить на русский';
+            } else {
+                currentLang = 'ru-RU';
+                langToggle.textContent = '🇷🇺';
+                langToggle.title = 'Переключить на английский';
+            }
+            if (recognition) {
+                recognition.lang = currentLang; // 🔄 Меняем язык в движке
+            }
+            console.log('Язык распознавания: ' + currentLang);
+        });
+    } else {
+        console.warn('Кнопка lang-toggle не найдена');
+    }
+
+    // --- ОЗВУЧКА СЛОВА ---
+    playWordAudio.addEventListener('click', () => {
+        const text = textInput.value.trim();
+        if (!text) {
+            alert('Введите слово для озвучки');
+            return;
+        }
+        const lang = text.match(/[а-яё]/i) ? 'ru' : 'en';
+        const audio = new Audio(`/words/speak/?text=${encodeURIComponent(text)}&lang=${lang}`);
+        audio.play().catch(e => console.error('Ошибка воспроизведения:', e));
+    });
+
+    // --- ОЗВУЧКА ПЕРЕВОДА ---
+    playTranslationAudio.addEventListener('click', () => {
+        const text = translationInput.value.trim();
+        if (!text) {
+            alert('Введите перевод для озвучки');
+            return;
+        }
+        const lang = text.match(/[а-яё]/i) ? 'ru' : 'en';
+        const audio = new Audio(`/words/speak/?text=${encodeURIComponent(text)}&lang=${lang}`);
+        audio.play().catch(e => console.error('Ошибка воспроизведения:', e));
+    });
+
+    // --- АВТОПЕРЕВОД С ДЕБАУНСОМ ---
+    let debounceTimer;
+    textInput.addEventListener('input', function () {
+        const text = textInput.value.trim();
+        clearTimeout(debounceTimer);
+        if (!text || translationInput.value.trim()) return;
+
+        debounceTimer = setTimeout(() => {
+            fetch('/words/translate/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.translation) {
+                    translationInput.value = data.translation;
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка перевода:', error);
+            });
+        }, 800);
+    });
+});
+
+    </script>
+{% endblock %}
+
+

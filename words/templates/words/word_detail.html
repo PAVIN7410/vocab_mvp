@@ -1,0 +1,25 @@
+<!-- words/templates/words/word_detail.html -->
+{% extends "words/base.html" %}
+
+{% block title %}{{ object.text }}{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="card-title">{{ object.text }}</h5>
+    <p class="card-text">Перевод: {{ object.translation }}</p>
+    <p class="card-text">
+      <small class="text-muted">
+        Следующее повторение: {{ object.next_review|date:"d.m.Y H:i" }}
+      </small>
+    </p>
+
+    <div class="mt-3">
+      <a href="{% url 'word-tts' object.pk %}" download class="btn btn-success">Скачать произношение</a>
+      <a href="{% url 'word-update' object.pk %}" class="btn btn-warning ms-2">Редактировать</a>
+      <a href="{% url 'word-delete' object.pk %}" class="btn btn-danger ms-2">Удалить</a>
+    </div>
+  </div>
+</div>
+<a href="{% url 'word-list' %}" class="btn btn-secondary">Назад</a>
+{% endblock %}

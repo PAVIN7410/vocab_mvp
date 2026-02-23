@@ -1,0 +1,52 @@
+<!-- words/templates/words/word_list.html -->
+{% extends "words/base.html" %}
+
+{% block title %}Мои слова{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Мои слова</h1>
+
+{% if words %}
+  <ul class="list-group">
+    {% for word in words %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+          <strong>{{ word.text }}</strong> — {{ word.translation }}<br>
+          <small class="text-muted">Следующее повторение: {{ word.next_review|date:"d.m.Y H:i" }}</small>
+        </div>
+        <div>
+          <a href="{% url 'word-detail' word.pk %}" class="btn btn-sm btn-info">Просмотр</a>
+
+
+
+          <!-- Кнопки озвучки -->
+          <button class="btn btn-sm btn-success" onclick="playAudio({{ word.id }}, 'word')" title="Озвучить слово">🔊</button>
+          <button class="btn btn-sm btn-secondary" onclick="playAudio({{ word.id }}, 'translation')" title="Озвучить перевод">🔊</button>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="text-muted">У тебя пока нет слов. Добавь их 👇</p>
+{% endif %}
+
+<a href="{% url 'word-create' %}" class="btn btn-primary mt-3">Добавить слово</a>
+
+<!-- Скрипт для озвучки -->
+<script>
+function playAudio(wordId, type) {
+    let url;
+    if (type === 'word') {
+        url = `{% url 'word-audio' pk=0 %}`.replace('0', wordId);
+    } else {
+        url = `{% url 'word-translation-audio' pk=0 %}`.replace('0', wordId);
+    }
+    const audio = new Audio(url);
+    audio.play().catch(e => {
+        console.error("Ошибка воспроизведения:", e);
+        alert("Не удалось воспроизвести аудио.");
+    });
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>⚙️ Настройки повторений</h1>
+
+{% if saved %}
+<div class="alert alert-success">Настройки сохранены!</div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <!-- Интервалы SM-2 (как у тебя уже есть) -->
+    <div class="form-group">
+        <label>Первое повторение (дни):</label>
+        <input type="number" name="first_interval" value="{{ settings.first_interval }}" min="1" max="30" required>
+    </div>
+
+    <div class="form-group">
+        <label>Второе повторение (дни):</label>
+        <input type="number" name="second_interval" value="{{ settings.second_interval }}" min="1" max="60" required>
+    </div>
+
+    <div class="form-group">
+        <label>Множитель интервалов:</label>
+        <input type="number" step="0.1" name="interval_multiplier" value="{{ settings.interval_multiplier }}" min="0.5" max="2" required>
+    </div>
+
+    <div class="form-group">
+        <label>Максимальный интервал (дни):</label>
+        <input type="number" name="max_interval" value="{{ settings.max_interval }}" min="30" max="730" required>
+    </div>
+
+    <div class="form-group">
+        <label>Минимальная легкость (EF):</label>
+        <input type="number" step="0.1" name="min_easiness" value="{{ settings.min_easiness }}" min="1.3" max="3" required>
+    </div>
+
+    <!-- НОВОЕ: выбор голоса -->
+<!-- Исправленный шаблон: пробелы вокруг оператора == -->
+
+<div class="form-group">
+    <label>Голос озвучки:</label>
+    <select name="voice_gender" class="form-control">
+        <option value="female" {% if settings.voice_gender == 'female' %}selected{% endif %}>Женский</option>
+        <option value="male" {% if settings.voice_gender == 'male' %}selected{% endif %}>Мужской</option>
+    </select>
+</div>
+
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+</form>
+{% endblock %}

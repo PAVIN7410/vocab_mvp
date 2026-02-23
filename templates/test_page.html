@@ -1,0 +1,312 @@
+
+<!-- vocab_mvp/templates/test_page.html -->
+
+{% extends "base.html" %}
+{% block title %}Тест{% endblock %}
+
+{% block content %}
+<style>
+    .test-container {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .word-card {
+        background: #f8f9fa;
+        padding: 30px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .word-text {
+        font-size: 32px;
+        font-weight: bold;
+        color: #333;
+        margin: 20px 0;
+    }
+    .input-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    .input-wrapper {
+        position: relative;
+        flex: 1;
+    }
+    #translation {
+        width: 100%;
+        padding: 12px 50px 12px 12px;
+        font-size: 18px;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        box-sizing: border-box;
+    }
+    #translation:focus {
+        outline: none;
+        border-color: #007bff;
+    }
+    .mic-button {
+        position: absolute;
+        right: 5px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 5px 10px;
+        color: #666;
+        transition: color 0.3s;
+    }
+    .mic-button:hover {
+        color: #007bff;
+    }
+    .mic-button.listening {
+        color: #dc3545;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .submit-btn {
+        padding: 12px 30px;
+        font-size: 18px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    .submit-btn:hover {
+        background: #0056b3;
+    }
+    .result-message {
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .result-correct {
+        background: #d4edda;
+        color: #155724;
+        border: 2px solid #c3e6cb;
+    }
+    .result-incorrect {
+        background: #f8d7da;
+        color: #721c24;
+        border: 2px solid #f5c6cb;
+    }
+    .result-details {
+        margin-top: 10px;
+        font-size: 16px;
+        font-weight: normal;
+    }
+    .voice-status {
+        text-align: center;
+        margin-top: 10px;
+        color: #666;
+        font-size: 14px;
+        min-height: 20px;
+    }
+
+        .word-controls {
+        text-align: center;
+        margin: 15px 0;
+    }
+    .play-button {
+        font-size: 24px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #007bff;
+        transition: color 0.3s;
+    }
+    .play-button:hover {
+        color: #0056b3;
+    }
+    .play-button:disabled {
+        color: #ccc;
+        cursor: not-allowed;
+    }
+</style>
+
+<div class="test-container">
+    <h2>🎯 Тест перевода</h2>
+    
+    {% if result %}
+        <div class="result-message {% if result == 'correct' %}result-correct{% else %}result-incorrect{% endif %}">
+            {% if result == 'correct' %}
+                ✅ Правильно!
+            {% else %}
+                ❌ Неправильно
+            {% endif %}
+            <div class="result-details">
+                <strong>{{ previous_word }}</strong> = <strong>{{ correct_translation }}</strong>
+                {% if result == 'incorrect' %}
+                <!-- Кнопка озвучки ПРАВИЛЬНОГО ответа -->
+                <button type="button"
+                        class="play-button"
+                        style="font-size: 18px; margin-left: 10px;"
+                        onclick="playTranslationAudio('{{ correct_translation|escapejs }}')"
+                        title="Озвучить правильный перевод">
+                    🔊
+                </button>
+                    <br>Ваш ответ: {{ user_translation }}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+    
+    {% if word %}
+        <div class="word-card">
+
+            {% if word.image %}
+                <img src="{{ word.image.url }}" alt="{{ word.text }}" style="max-width: 300px; height: auto;">
+            {% endif %}
+
+            <p>📖 Переведите слово:</p>
+            <div class="word-text">{{ word.text }}</div>
+
+                        <!-- Кнопка озвучки -->
+            <div class="word-controls">
+               <button
+                    class="play-button"
+                    onclick="playWordAudio({{ word.id }})"
+                    title="Озвучить слово">
+                    🔊
+               </button>
+            </div>
+        </div>
+        
+        <form method="post" id="testForm">
+            {% csrf_token %}
+            <input type="hidden" name="word_id" value="{{ word.id }}">
+            
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <input type="text" 
+                           id="translation" 
+                           name="translation" 
+                           placeholder="Введите перевод..."
+                           autocomplete="off"
+                           required>
+                    <button type="button" 
+                            class="mic-button" 
+                            id="micButton"
+                            title="Голосовой ввод">
+                        🎤
+                    </button>
+                </div>
+                <button type="submit" class="submit-btn">Проверить</button>
+            </div>
+            <div class="voice-status" id="voiceStatus"></div>
+        </form>
+    {% else %}
+        <p style="text-align: center; color: #666;">
+            {{ message }}
+        </p>
+    {% endif %}
+</div>
+
+<script>
+    // ✅ ЕДИНСТВЕННАЯ функция озвучки
+    function playWordAudio(wordId) {
+        const url = `/words/${wordId}/audio/`;
+        const audio = new Audio(url);
+        audio.play().catch(e => {
+            console.error("Ошибка воспроизведения:", e);
+            alert("Не удалось воспроизвести аудио.");
+        });
+    }
+
+// Озвучка произвольного текста (перевода)
+function playTranslationAudio(text) {
+    // Используем автоопределение языка на бэкенде
+    const url = `/words/speak/?text=${encodeURIComponent(text)}&lang=auto`;
+    const audio = new Audio(url);
+    audio.play().catch(e => {
+        console.error("Ошибка озвучки перевода:", e);
+    });
+}
+
+
+function playTranslationAudio(text) {
+    // Вызываем ваш эндпоинт speak_text с автоопределением языка
+    const url = `/words/speak/?text=${encodeURIComponent(text)}&lang=auto`;
+    const audio = new Audio(url);
+    audio.play().catch(e => console.error("Ошибка озвучки:", e));
+}
+
+
+    // Голосовой ввод
+    const micButton = document.getElementById('micButton');
+    const translationInput = document.getElementById('translation');
+    const voiceStatus = document.getElementById('voiceStatus');
+
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+
+        // --- УМНОЕ ОПРЕДЕЛЕНИЕ ЯЗЫКА ---
+        {% if word %}
+            // Если в исходном слове есть кириллица, значит ответ ждем на АНГЛИЙСКОМ
+            const isRussianSource = /[а-яё]/i.test("{{ word.text|escapejs }}");
+            recognition.lang = isRussianSource ? 'en-US' : 'ru-RU';
+        {% else %}
+            recognition.lang = 'ru-RU';
+        {% endif %}
+        console.log("Ожидаемый язык ввода:", recognition.lang);
+        // ------------------------------
+
+        recognition.continuous = false;
+        recognition.interimResults = false;
+
+        let isListening = false;
+
+        micButton.addEventListener('click', () => {
+            if (isListening) {
+                recognition.stop();
+                return;
+            }
+            recognition.start();
+            isListening = true;
+            micButton.classList.add('listening');
+            voiceStatus.textContent = '🎤 Слушаю... Говорите перевод';
+        });
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            translationInput.value = transcript;
+            voiceStatus.textContent = '✅ Распознано: ' + transcript;
+
+            // Автоматическая отправка формы после распознавания (по желанию)
+            // setTimeout(() => document.getElementById('testForm').submit(), 500);
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            voiceStatus.textContent = '⚠️ Ошибка: ' + event.error;
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            micButton.classList.remove('listening');
+            if (voiceStatus.textContent.includes('Слушаю')) {
+                voiceStatus.textContent = '';
+            }
+        };
+    } else {
+        micButton.style.display = 'none';
+    }
+
+    // Автофокус на поле ввода
+    if (translationInput) {
+        translationInput.focus();
+    }
+
+</script>
+
+
+{% endblock %}
