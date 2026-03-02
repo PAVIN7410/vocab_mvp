@@ -45,17 +45,13 @@ python manage.py makemigrations
 python manage.py migrate
 Используйте код с осторожностью.
 
-4. Создай супер пользователя
-python manage.py createsuperuser
-пароль будет невидимый
-
-5. Запуск проекта
+4. Запуск проекта
 Запуск веб-панели:
 bash
 python manage.py runserver
 Используйте код с осторожностью.
 
-6.Запуск Telegram-бота (в отдельном терминале):
+Запуск Telegram-бота (в отдельном терминале):
 bash
 python bot/telegram_bot.py
 Используйте код с осторожностью.
