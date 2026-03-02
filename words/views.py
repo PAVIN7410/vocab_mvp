@@ -5,6 +5,7 @@ import logging
 import random
 from io import BytesIO
 
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.http import HttpResponseRedirect
 from django.http import JsonResponse
@@ -26,7 +27,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from vocab.deep_translate import GoogleTranslator
-from vocab.models import TelegramUser
+from vocab.models import Card, Repetition
+from vocab.models import TelegramUser  # импортируем из правильного прилож
 from vocab.utils import get_or_generate_image
 from .models import Word
 
@@ -125,38 +127,42 @@ def home(request):
 
 
 # --- CRUD ---
-class WordListView(ListView):
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+class WordListView(LoginRequiredMixin, ListView):
     model = Word
     template_name = 'word_list.html'
     context_object_name = 'words'
+    
+    def get_queryset(self):
+        # Показываем только слова текущего пользователя
+        if self.request.tg_user:
+            return Word.objects.filter(user=self.request.tg_user)
+        return Word.objects.none()
 
 
-class WordDetailView(DetailView):
+class WordDetailView(LoginRequiredMixin, DetailView):
     model = Word
     template_name = 'word_detail.html'
 
 
-class WordCreateView(CreateView):
+class WordCreateView(LoginRequiredMixin, CreateView):
     model = Word
     fields = ['text', 'translation']
     template_name = 'word_form.html'
     success_url = reverse_lazy('word-list')
     
     def form_valid(self, form):
-        # 1. Импортируем модель (убедитесь, что имя НЕ совпадает с переменной ниже)
-        from vocab.models import TelegramUser as TelegramUserModel
-
-        # 2. Получаем ОБЪЕКТ (экземпляр), а не класс
-        # get_or_create возвращает кортеж (объект, создано_ли_оно)
-        user_instance, _ = TelegramUserModel.objects.get_or_create(
-            telegram_id=12345,
-            defaults={'username': 'test_user'}
-        )
-
-        # 3. Присваиваем именно ОБЪЕКТ экземпляру слова
-        form.instance.user = user_instance
-
-        # 4. Логика перевода
+        # Для создания слов через веб-форму нужен logged-in пользователь
+        if not self.request.tg_user:
+            from django.contrib import messages
+            messages.error(self.request, 'Пожалуйста, откройте сайт через Telegram-бота.')
+            from django.shortcuts import redirect
+            return redirect('word-list')
+        
+        form.instance.user = self.request.tg_user
+        
+        # Автоперевод
         if not form.instance.translation and form.instance.text:
             try:
                 from deep_translator import GoogleTranslator
@@ -165,26 +171,51 @@ class WordCreateView(CreateView):
                     form.instance.translation = str(translated)
             except Exception as e:
                 print(f"Translation error: {e}")
-
-        # 5. Сохраняем
+        
         return super().form_valid(form)
 
 
 
 # --- Добавляем UpdateView ---
-class WordUpdateView(UpdateView):
+class WordUpdateView(LoginRequiredMixin, UpdateView):
     model = Word
     fields = ['text', 'translation']
     template_name = 'word_form.html'
     success_url = reverse_lazy('word-list')
 
-#     def form_valid(self, form):
-#         # Сохраняем без изменений пользователя
-#         return super().form_valid(form)
+    def form_valid(self, form):
+        # Сохраняем без изменений пользователя
+        return super().form_valid(form)
+
+
+
+@login_required
+def progress_view(request):
+    tg_user = getattr(request.user, 'tg_user', None)
+    if not tg_user:
+        return render(request, 'progress.html', {'error': 'Аккаунт не привязан к Telegram'})
+
+    # Количество изученных слов
+    total_cards = Card.objects.filter(owner=tg_user).count()
+
+    # Средняя частота повторений
+    avg_repeats = Repetition.objects.filter(card__owner=tg_user).aggregate(Avg('repeats'))['repeats__avg']
+
+    # Статистика по уровням сложности
+    levels_stats = Card.objects.filter(owner=tg_user).values('difficulty').annotate(count=Count('id'))
+
+    context = {
+        'total_cards': total_cards,
+        'average_repeats': round(float(avg_repeats), 2) if avg_repeats else 0,
+        'levels_stats': dict(levels_stats),
+    }
+    return render(request, 'progress.html', context)
+
+
 
 
 # --- Добавляем DeleteView ---
-class WordDeleteView(DeleteView):
+class WordDeleteView(LoginRequiredMixin, DeleteView):
     model = Word
     template_name = 'word_confirm_delete.html'
     success_url = reverse_lazy('word-list')

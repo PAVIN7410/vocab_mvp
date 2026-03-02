@@ -1,64 +1,41 @@
-# image_generator.py
+# bot/image_generator.py
 
-import tempfile
-from urllib.parse import quote
+import urllib.parse
 
 import requests
-from dotenv import load_dotenv
+from django.core.files import File
+from django.core.files.temp import NamedTemporaryFile
 
-load_dotenv()
-
-
-class ImageGenerationError(Exception):
-    pass
+POLLINATIONS_BASE = "https://image.pollinations.ai/prompt"
 
 
-def generate_image_for_word(prompt: str, width: int = 512, height: int = 512) -> str:
+def fetch_image_for_word(word: str, translation: str | None = None) -> File | None:
     """
-    Генерирует картинку для слова/фразы через Pollinations.ai и возвращает путь к временному файлу.
-    Файл нужно удалить после использования.
-    
-    Args:
-        prompt: текст для генерации (слово или фраза)
-        width: ширина изображения (игнорируется Pollinations, оставлено для совместимости)
-        height: высота изображения (игнорируется Pollinations, оставлено для совместимости)
-    
-    Returns:
-        str: путь к временному PNG файлу
+    Пытается получить картинку через Pollinations по слову/переводу.
+    Возвращает Django File, готовый для ImageField, либо None при ошибке.
     """
-    print(f"Generating image via Pollinations.ai: {prompt}")
-    
-    # Кодируем промпт для URL
-    encoded_prompt = quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-    
+    # Собираем понятный prompt
+    if translation:
+        prompt = f"{word} ({translation})"
+    else:
+        prompt = word
+
+    encoded_prompt = urllib.parse.quote(prompt)
+    url = f"{POLLINATIONS_BASE}/{encoded_prompt}"
+
+    print(f"[Pollinations] Запрос изображения: {url}")
+
     try:
-        response = requests.get(url, timeout=30)
-        
-        if response.status_code != 200:
-            raise ImageGenerationError(f"Pollinations API error: {response.status_code}")
-        
-        # Сохраняем во временный файл
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-            tf.write(response.content)
-            print(f"Image saved to {tf.name}")
-            return tf.name
-            
+        resp = requests.get(url, timeout=40)
+        resp.raise_for_status()
     except requests.RequestException as e:
-        raise ImageGenerationError(f"Network error: {str(e)}")
+        # НЕ бросаем исключение наружу, только логируем
+        print(f"[Pollinations] Ошибка запроса: {e}")
+        return None
 
+    img_temp = NamedTemporaryFile(delete=True)
+    img_temp.write(resp.content)
+    img_temp.flush()
 
+    return File(img_temp, name="pollinations_image.jpg")
 
-
-
-    # пример кода
-# from PIL import Image
-#
-# # Открыть изображение
-# img = Image.open("cat.jpg")
-#
-# # Уменьшить
-# img.thumbnail((300, 300))
-#
-# # Сохранить
-# img.save("cat_thumb.jpg")

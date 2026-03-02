@@ -10,6 +10,8 @@ from . import views
 
 #from vocab.views import progress_view  # ← Импортируем view
 urlpatterns = [
+    path('bot-login/', views.bot_login_view, name='bot_login'),
+    path('start-test', views.test_view, name='start_test'),
     path('test/', views.test_view, name='test'),
     path('register/', views.register_user, name='register'),
     path('admin/', admin.site.urls),

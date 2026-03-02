@@ -1,9 +1,10 @@
 #words/models.py:
 
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
-
-
+from bot.image_generator import fetch_image_for_word
 
 
 def word_image_upload_path(instance, filename):
@@ -20,6 +21,7 @@ class Word(models.Model):
     )
     text = models.CharField(max_length=255)
     translation = models.CharField(max_length=255)
+    image = models.ImageField(upload_to='word_images/', blank=True, null=True)
 
     source_lang = models.CharField(
         max_length=10,
@@ -44,7 +46,19 @@ class Word(models.Model):
         # Используем username пользователя, так как объект user может не иметь __str__
         return f"{self.text} ({self.user.username if self.user else 'No User'})"
 
+@receiver(post_save, sender=Word)
+def add_image_to_word(sender, instance: Word, created: bool, **kwargs):
+    if not created:
+        return
+    if instance.image:
+        return
 
+    prompt = f"{instance.text} ({instance.translation})"
+    django_file = fetch_image_for_word(instance.text, instance.translation)
+    if django_file is None:
+        return
+
+    save = instance.image.save(django_file.name, django_file, save=True)
 
 
 

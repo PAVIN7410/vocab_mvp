@@ -1,4 +1,5 @@
 # words/urls.py
+
 from django.urls import path
 from django.views.generic import RedirectView
 
@@ -18,4 +19,10 @@ urlpatterns = [
     path('<int:pk>/audio/', views.generate_audio, {'text_type': 'word'}, name='word-audio'),
     path('<int:pk>/audio-translation/', views.generate_audio, {'text_type': 'translation'}, name='word-translation-audio'),
     path('speak/', views.speak_text, name='speak_text'),
+
+    # Новые маршруты
+    path('progress/', views.progress_view, name='progress'),
+    # path('review/', views.review_view, name='review'),
+    path('settings/', views.settings_view, name='settings'),
+
 ]
