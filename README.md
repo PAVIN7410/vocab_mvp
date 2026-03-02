@@ -45,6 +45,10 @@ python manage.py makemigrations
 python manage.py migrate
 Используйте код с осторожностью.
 
+4. Создай супер пользователя
+python manage.py createcuperuser
+пароль будет невидимый
+
 4. Запуск проекта
 Запуск веб-панели:
 bash
