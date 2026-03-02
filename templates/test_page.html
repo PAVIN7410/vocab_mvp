@@ -158,12 +158,13 @@
             </div>
         </div>
     {% endif %}
-    
+
+
     {% if word %}
         <div class="word-card">
 
             {% if word.image %}
-                <img src="{{ word.image.url }}" alt="{{ word.text }}" style="max-width: 300px; height: auto;">
+          <img src="{{ word.image.url }}" alt="{{ word.word }}" style="max-width: 300px; height: auto;">
             {% endif %}
 
             <p>📖 Переведите слово:</p>

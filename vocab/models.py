@@ -1,4 +1,4 @@
-#  vocab/models.py
+# vocab/models.py
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
@@ -7,12 +7,21 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
+from bot.image_generator import fetch_image_for_word
+from words.models import Word
+
 
 class SomeModel(models.Model):
+    """
+    Пример связи с моделью Word из приложения words.
+    """
     word = models.ForeignKey('words.Word', on_delete=models.CASCADE)
 
 
 class TelegramUser(models.Model):
+    """
+    Пользователь Telegram, связанный (опционально) с Django User.
+    """
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
     telegram_id = models.BigIntegerField(unique=True)
     username = models.CharField(max_length=128, blank=True, null=True)
@@ -26,6 +35,10 @@ class TelegramUser(models.Model):
 
 
 class UserSettings(models.Model):
+    """
+    Настройки интервального повторения и голосовых параметров
+    для конкретного TelegramUser.
+    """
     user = models.OneToOneField(TelegramUser, on_delete=models.CASCADE, related_name='settings')
     first_interval = models.IntegerField(default=1)
     second_interval = models.IntegerField(default=6)
@@ -44,9 +57,10 @@ class UserSettings(models.Model):
         return f"Настройки {self.user}"
 
 
-
-
 class BotLog(models.Model):
+    """
+    Лог запросов/ответов бота.
+    """
     telegram_id = models.BigIntegerField()
     command = models.CharField(max_length=64)
     request = models.TextField()
@@ -58,10 +72,16 @@ class BotLog(models.Model):
 
 
 def card_image_upload_path(instance, filename):
+    """
+    Путь для сохранения изображений карточек пользователя.
+    """
     return f"card_images/user_{instance.owner.id}/{filename}"
 
 
 class Card(models.Model):
+    """
+    Карточка слова для конкретного TelegramUser.
+    """
     DIFFICULTY_CHOICES = (
         ('beginner', 'Начальный'),
         ('intermediate', 'Средний'),
@@ -82,6 +102,9 @@ class Card(models.Model):
 
 
 class Repetition(models.Model):
+    """
+    Параметры интервального повторения для карточки.
+    """
     card = models.OneToOneField(Card, on_delete=models.CASCADE, related_name="repetition")
     next_review = models.DateTimeField()
     interval = models.IntegerField(default=0)
@@ -92,26 +115,29 @@ class Repetition(models.Model):
     updated = models.DateTimeField(auto_now=True)
 
     def schedule_review(self, quality: int):
+        """
+        Обновляет параметры интервального повторения по оценке quality (0–5).
+        """
         try:
-            settings = self.card.owner.settings
+            settings_obj = self.card.owner.settings
         except ObjectDoesNotExist:
-            settings = UserSettings.objects.create(user=self.card.owner)
+            settings_obj = UserSettings.objects.create(user=self.card.owner)
 
         if quality < 3:
-            self.interval = settings.first_interval
+            self.interval = settings_obj.first_interval
             self.repetitions = 0
         else:
             if self.repetitions == 0:
-                self.interval = settings.first_interval
+                self.interval = settings_obj.first_interval
             elif self.repetitions == 1:
-                self.interval = settings.second_interval
+                self.interval = settings_obj.second_interval
             else:
-                self.interval = int(self.interval * self.easiness * settings.interval_multiplier)
-            self.interval = min(self.interval, settings.max_interval)
+                self.interval = int(self.interval * self.easiness * settings_obj.interval_multiplier)
+            self.interval = min(self.interval, settings_obj.max_interval)
             self.repetitions += 1
 
         self.easiness = max(
-            settings.min_easiness,
+            settings_obj.min_easiness,
             self.easiness + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
         )
         self.next_review = timezone.now() + timezone.timedelta(days=self.interval)
@@ -123,69 +149,71 @@ class Repetition(models.Model):
         return f"{self.card.word}: след. повторение {self.next_review}"
 
 
-
-
+# === СИГНАЛЫ ===
 
 @receiver(post_save, sender=Card)
-def create_repetition(sender, instance, created, **kwargs):
-    if created:
-        Repetition.objects.get_or_create(
-            card=instance,
-            defaults={
-                'next_review': timezone.now(),
-                'interval': 0,
-                'easiness': 2.5,
-                'repetitions': 0,
-                'review_count': 0,
-                'last_result': True
-            }
-        )
-        if not instance.image:
-            try:
-                from bot.image_generator import generate_image_for_word, ImageGenerationError
-                from django.core.files import File
-                import os
-                img_path = generate_image_for_word(instance.word)
-                with open(img_path, "rb") as f:
-                    django_file = File(f, name=f"{instance.word}.png")
-                    instance.image.save(django_file.name, django_file, save=True)
-                if os.path.exists(img_path):
-                    os.remove(img_path)
-            except (ImageGenerationError, Exception) as e:
-                print(f"Error generating image for card: {e}")
-
-
-@receiver(post_save, sender='words.Word')
-def create_cards_for_all_users(sender, instance, created, **kwargs):
+def create_repetition_and_card_image(sender, instance: Card, created: bool, **kwargs):
     """
-    При создании нового слова в админке, оно автоматически
-    становится карточкой для ВСЕХ зарегистрированных пользователей.
+    1) При создании новой карточки создаём запись Repetition.
+    2) Если у карточки ещё нет изображения — генерируем его и сохраняем в Card.image.
     """
-    if created:
-        try:
-            # 1. Получаем всех живых пользователей (кроме тестового, если он мешает)
-            all_users = TelegramUser.objects.exclude(telegram_id=12345)
+    if not created:
+        return
 
-            if not all_users.exists():
-                print("DEBUG: Новых пользователей пока нет. Карточки не созданы.")
-                return
+    # 1. Repetition
+    Repetition.objects.get_or_create(
+        card=instance,
+        defaults={
+            'next_review': timezone.now(),
+            'interval': 0,
+            'easiness': 2.5,
+            'repetitions': 0,
+            'review_count': 0,
+            'last_result': True,
+        }
+    )
 
-            # 2. Создаем карточки для каждого пользователя
-            created_count = 0
-            for tg_user in all_users:
-                # Используем get_or_create, чтобы не дублировать, если слово уже есть
-                _, card_created = Card.objects.get_or_create(
-                    owner=tg_user,
-                    word=instance.text,
-                    defaults={
-                        'translation': instance.translation,
-                        'difficulty': 'beginner'
-                    }
-                )
-                if card_created:
-                    created_count += 1
+    # 2. Картинка для карточки
+    if instance.image:
+        return
 
-            print(f"✅ Слово '{instance.text}' успешно добавлено {created_count} пользователям.")
+    django_file = fetch_image_for_word(instance.word, instance.translation)
+    if django_file is None:
+        return
 
-        except Exception as e:
-            print(f"❌ ОШИБКА В СИГНАЛЕ: {e}")
+    instance.image.save(django_file.name, django_file, save=True)
+
+
+@receiver(post_save, sender=Word)
+def create_cards_for_all_users(sender, instance: Word, created: bool, **kwargs):
+    """
+    При создании нового слова (words.Word) оно автоматически
+    становится карточкой для ВСЕХ зарегистрированных TelegramUser.
+    """
+    if not created:
+        return
+
+    try:
+        all_users = TelegramUser.objects.all()
+
+        if not all_users.exists():
+            print("DEBUG: Новых пользователей пока нет. Карточки не созданы.")
+            return
+
+        created_count = 0
+        for tg_user in all_users:
+            _, card_created = Card.objects.get_or_create(
+                owner=tg_user,
+                word=instance.text,
+                defaults={
+                    'translation': instance.translation,
+                    'difficulty': 'beginner',
+                }
+            )
+            if card_created:
+                created_count += 1
+
+        print(f"✅ Слово '{instance.text}' успешно добавлено {created_count} пользователям.")
+
+    except Exception as e:
+        print(f"❌ ОШИБКА В СИГНАЛЕ create_cards_for_all_users: {e}")
