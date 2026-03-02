@@ -46,7 +46,7 @@ python manage.py migrate
 Используйте код с осторожностью.
 
 4. Создай супер пользователя
-python manage.py createcuperuser
+python manage.py createsuperuser
 пароль будет невидимый
 
 4. Запуск проекта
