@@ -1,35 +1,41 @@
 # vocab/views.py
-
 import logging
+import re
+from random import choice
 
 from django.db.models import Count
-from django.http import HttpRequest, HttpResponse
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpRequest
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Repetition, UserSettings, TelegramUser, Card
+from words.models import Word
+from .models import TelegramUser, Card, Repetition, UserSettings
 
 logger = logging.getLogger(__name__)
 
-
+from django.shortcuts import render
 # === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ЮЗЕРА ИЗ СЕССИИ ===
 
+
+
 def get_tg_user(request: HttpRequest):
-    """
-    Достаём TelegramUser по telegram_id из сессии.
-    Этот telegram_id один раз устанавливается во время входа с бота.
-    """
     tg_id = request.session.get('telegram_id')
+    print(f"🔍 get_tg_user(): session telegram_id={tg_id} (type: {type(tg_id)})")
+
     if not tg_id:
         return None
     try:
-        return TelegramUser.objects.get(telegram_id=tg_id)
+        user = TelegramUser.objects.get(telegram_id=tg_id)
+        print(f"🔍 get_tg_user(): found user={user.username}")
+        return user
     except TelegramUser.DoesNotExist:
+        print(f"🔍 get_tg_user(): user not found for telegram_id={tg_id}")
         return None
+
+
 
 
 # === ВХОД ЧЕРЕЗ БОТА ===
@@ -46,8 +52,8 @@ def bot_login_view(request: HttpRequest) -> HttpResponse:
         defaults={'username': username}
     )
 
-    # ВАЖНО: ключ должен совпадать с тем, что читает get_tg_user
-    request.session['telegram_id'] = int(telegram_id)
+    # ✅ ВАЖНО: сохраняем как СТРОКУ
+    request.session['telegram_id'] = str(telegram_id)
 
     return HttpResponseRedirect(reverse('review'))
 
@@ -63,9 +69,7 @@ def review_view(request: HttpRequest) -> HttpResponse:
         return render(
             request,
             'review.html',
-            {
-                'error': 'Пожалуйста, откройте сайт по ссылке из Telegram-бота.'
-            }
+
         )
 
     due_repetitions = (
@@ -92,7 +96,8 @@ def review_view(request: HttpRequest) -> HttpResponse:
     })
 
 
-# === СТРАНИЦА ПРОГРЕССА ===
+
+#=== СТРАНИЦА ПРОГРЕССА ===
 
 def progress_view(request: HttpRequest) -> HttpResponse:
     """
@@ -136,7 +141,8 @@ def progress_view(request: HttpRequest) -> HttpResponse:
     })
 
 
-# === СТРАНИЦА НАСТРОЕК ===
+
+#=== СТРАНИЦА НАСТРОЕК ===
 
 def settings_view(request: HttpRequest) -> HttpResponse:
     """
@@ -164,35 +170,6 @@ def settings_view(request: HttpRequest) -> HttpResponse:
 
 
 # === СТРАНИЦА ТЕСТА ===
-
-# def test_view(request: HttpRequest) -> HttpResponse:
-#     """
-#     Страница 'Тест': показывает случайную карточку текущего пользователя.
-#     Ожидает telegram_id в сессии (устанавливается в bot_login_view).
-#     """
-#     tg_user = get_tg_user(request)
-#     if not tg_user:
-#         return HttpResponse("Пользователь не найден. Откройте сайт по ссылке из бота.")
-#
-#     cards_qs = Card.objects.filter(owner=tg_user)
-#     if not cards_qs.exists():
-#         return HttpResponse("У вас пока нет карточек для теста.")
-#
-#     card = choice(list(cards_qs))
-#
-#     return render(request, "test.html", {"card": card})
-
-
-
-
-from random import choice
-import re
-
-from django.shortcuts import render
-from django.http import HttpRequest, HttpResponse
-
-from words.models import Word
-
 
 def test_view(request: HttpRequest) -> HttpResponse:
     """
@@ -263,3 +240,4 @@ def register_user(request):
         return Response({'status': 'created'}, status=status.HTTP_201_CREATED)
     else:
         return Response({'status': 'exists'}, status=status.HTTP_200_OK)
+

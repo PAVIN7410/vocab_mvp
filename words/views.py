@@ -6,11 +6,11 @@ import random
 from io import BytesIO
 
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.http import HttpResponseRedirect
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 from django.urls import reverse_lazy
 from django.views.decorators.csrf import csrf_exempt
@@ -26,9 +26,9 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from vocab.deep_translate import GoogleTranslator
+from deep_translator import GoogleTranslator
 from vocab.models import Card, Repetition
-from vocab.models import TelegramUser  # импортируем из правильного прилож
+from vocab.models import TelegramUser, UserSettings
 from vocab.utils import get_or_generate_image
 from .models import Word
 
@@ -82,19 +82,19 @@ def test_view(request):
         else:
             result = 'incorrect'
 
-    # Выбираем НОВОЕ слово для следующего раунда
-    current_word = random.choice(words)
+        # Выбираем НОВОЕ слово для следующего раунда
+        current_word = random.choice(words)
 
-    context = {
-        'word': current_word,
-        'result': result,
-        'previous_word': previous_word,
-        'previous_word_id': previous_word_id,
-        'correct_translation': correct_translation,
-        'user_translation': user_translation,
-    }
+        context = {
+            'word': current_word,
+            'result': result,
+            'previous_word': previous_word,
+            'previous_word_id': previous_word_id,
+            'correct_translation': correct_translation,
+            'user_translation': user_translation,
+        }
 
-    return render(request, 'test_page.html', context)
+        return render(request, 'test_page.html', context)
 
 
     if words.exists():
@@ -127,13 +127,12 @@ def home(request):
 
 
 # --- CRUD ---
-from django.contrib.auth.mixins import LoginRequiredMixin
 
 class WordListView(LoginRequiredMixin, ListView):
     model = Word
     template_name = 'word_list.html'
     context_object_name = 'words'
-    
+
     def get_queryset(self):
         # Показываем только слова текущего пользователя
         if self.request.tg_user:
@@ -151,7 +150,7 @@ class WordCreateView(LoginRequiredMixin, CreateView):
     fields = ['text', 'translation']
     template_name = 'word_form.html'
     success_url = reverse_lazy('word-list')
-    
+
     def form_valid(self, form):
         # Для создания слов через веб-форму нужен logged-in пользователь
         if not self.request.tg_user:
@@ -159,9 +158,9 @@ class WordCreateView(LoginRequiredMixin, CreateView):
             messages.error(self.request, 'Пожалуйста, откройте сайт через Telegram-бота.')
             from django.shortcuts import redirect
             return redirect('word-list')
-        
+
         form.instance.user = self.request.tg_user
-        
+
         # Автоперевод
         if not form.instance.translation and form.instance.text:
             try:
@@ -171,7 +170,7 @@ class WordCreateView(LoginRequiredMixin, CreateView):
                     form.instance.translation = str(translated)
             except Exception as e:
                 print(f"Translation error: {e}")
-        
+
         return super().form_valid(form)
 
 
@@ -338,16 +337,24 @@ def speak_text(request):
         return HttpResponse(status=500)
 
 
+@login_required  # ← Обязательно требуем авторизацию
 def settings_view(request):
-    try:
-        telegram_user = TelegramUser.objects.get(telegram_id=12345)
-    except TelegramUser.DoesNotExist:
-        telegram_user = TelegramUser.objects.create(
-            telegram_id=12345,
-            username='test_user'
-        )
+    # ✅ Берём РЕАЛЬНОГО пользователя из запроса
+    tg_user = getattr(request, 'tg_user', None)
 
-    settings, _ = UserSettings.objects.get_or_create(user=telegram_user)
+    # Если связи нет, создаём её (для совместимости)
+    if not tg_user:
+        tg_user, _ = TelegramUser.objects.get_or_create(
+            user=request.user,
+            defaults={
+                'telegram_id': f"web_{request.user.id}",
+                'username': request.user.username
+            }
+        )
+        request.tg_user = tg_user
+
+    # ✅ Получаем настройки для ЭТОГО пользователя
+    settings, _ = UserSettings.objects.get_or_create(user=tg_user)
 
     if request.method == 'POST':
         settings.first_interval = int(request.POST.get('first_interval', settings.first_interval))
@@ -355,7 +362,7 @@ def settings_view(request):
         settings.interval_multiplier = float(request.POST.get('interval_multiplier', settings.interval_multiplier))
         settings.max_interval = int(request.POST.get('max_interval', settings.max_interval))
         settings.min_easiness = float(request.POST.get('min_easiness', settings.min_easiness))
-        settings.voice_gender = request.POST.get('voice_gender', settings.voice_gender)  # Сохраняем выбор голоса
+        settings.voice_gender = request.POST.get('voice_gender', settings.voice_gender)
         settings.save()
         return HttpResponseRedirect(reverse('settings') + '?saved=1')
 

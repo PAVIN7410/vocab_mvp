@@ -1,9 +1,7 @@
 # bot/voice.py
 import tempfile
 import time
-
 from gtts import gTTS
-
 
 def synthesize_text_to_mp3(
     text: str,
@@ -32,7 +30,6 @@ def synthesize_text_to_mp3(
     # Если все попытки не удались — отдадим ошибку наверх
     raise last_err
 
-
 # Доступные акценты (по сути "голоса" gTTS) для разных языков.
 VOICE_OPTIONS = {
     "en": {
@@ -46,7 +43,6 @@ VOICE_OPTIONS = {
         "com": "Russian",
     }
 }
-
 
 def get_available_voices():
     """

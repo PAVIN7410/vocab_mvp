@@ -23,8 +23,9 @@ class TelegramUser(models.Model):
     Пользователь Telegram, связанный (опционально) с Django User.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
-    telegram_id = models.BigIntegerField(unique=True)
-    username = models.CharField(max_length=128, blank=True, null=True)
+    telegram_id = models.CharField(max_length=50, unique=True)  # ← Строка!
+    username = models.CharField(max_length=255, blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

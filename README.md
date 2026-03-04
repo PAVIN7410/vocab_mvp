@@ -28,10 +28,9 @@ git clone <your-repo-url>
 cd vocab_mvp
 python -m venv venv
 source venv/bin/activate  # Для Windows: venv\Scripts\activate
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 Используйте код с осторожностью.
-pip install --upgrade pip setuptools wheel
-
 
 2. Настройка окружения
 Создайте файл .env в корне проекта и добавьте ваши ключи:
@@ -65,4 +64,4 @@ python bot/telegram_bot.py
 📝 Лицензия
 MIT
 
-Чтобы открывались все страницы надо перейти в бота: 💬 Telegram бот и в меню выбрать "Start"
+Чтобы зарегистрироваться на сайте надо перейти в бота: 💬 Telegram бот и в меню выбрать "Start"
