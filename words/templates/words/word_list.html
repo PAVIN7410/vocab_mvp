@@ -6,6 +6,23 @@
 {% block content %}
 <h1 class="mb-4">Мои слова</h1>
 
+
+
+    <!-- Диагностическая информация -->
+    <div style="background: #f0f0f0; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+        <strong>ℹ️ Диагностика:</strong><br>
+        • Всего слов в базе: {{ words|length }}<br>
+        • Текущий пользователь: {{ request.user.username }}<br>
+        {% if tg_user %}
+        • Telegram ID: {{ tg_user.telegram_id }}<br>
+        {% endif %}
+        <button onclick="location.reload()" style="margin-top: 10px;">🔄 Перезагрузить</button>
+    </div>
+
+
+
+
+
 {% if words %}
   <ul class="list-group">
     {% for word in words %}

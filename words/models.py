@@ -4,7 +4,9 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+
 from bot.image_generator import fetch_image_for_word
+from vocab.models import TelegramUser
 
 
 def word_image_upload_path(instance, filename):
@@ -12,39 +14,45 @@ def word_image_upload_path(instance, filename):
     user_id = instance.user.id if instance.user and instance.user.id else "unknown"
     return f"word_images/user_{user_id}/{filename}"
 
+
+class Meta:
+    unique_together = ['user', 'text']  # Одно слово один раз на юзера
+
+
 class Word(models.Model):
-    # Используем строку 'vocab.TelegramUser' для предотвращения кругового импорта
     user = models.ForeignKey(
         'vocab.TelegramUser',
         on_delete=models.CASCADE,
-        related_name='words'
+        related_name='words',
+        null=True, blank=True  # ← Разрешаем null временно
     )
     text = models.CharField(max_length=255)
     translation = models.CharField(max_length=255)
-    image = models.ImageField(upload_to='word_images/', blank=True, null=True)
 
-    source_lang = models.CharField(
-        max_length=10,
-        default='en',
-        help_text='Language of the original word (en/ru)'
-    )
-
-    # Рекомендуется использовать callable (без скобок), чтобы дата бралась в момент создания
+    source_lang = models.CharField(max_length=10, default='en')
     next_review = models.DateTimeField(default=timezone.now)
-
     interval = models.IntegerField(default=1)
     repetitions = models.IntegerField(default=0)
     ease_factor = models.FloatField(default=2.5)
 
-    image = models.ImageField(
-        upload_to=word_image_upload_path,
-        null=True,
-        blank=True
-    )
+    class Meta:
+        unique_together = ['user', 'text']  # ← Защита от дублей
 
     def __str__(self):
-        # Используем username пользователя, так как объект user может не иметь __str__
         return f"{self.text} ({self.user.username if self.user else 'No User'})"
+
+    def save(self, *args, **kwargs):
+        """Автосвязка к основному пользователю если нет"""
+        if not self.user:
+            try:
+                main_user = TelegramUser.objects.first()
+                if main_user:
+                    self.user = main_user
+            except:
+                pass
+        super().save(*args, **kwargs)
+
+
 
 @receiver(post_save, sender=Word)
 def add_image_to_word(sender, instance: Word, created: bool, **kwargs):

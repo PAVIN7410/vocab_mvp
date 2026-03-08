@@ -51,7 +51,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'vocab',
     'words',
-#    'django_celery_beat',
+    'django_celery_beat',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -123,7 +124,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Moscow'
 
 USE_I18N = True
 
@@ -149,8 +150,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'vocab.settings')
 
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
+# # === Celery Configuration ===
+#
+# # ✅ Используем базу данных вместо Redis (для локальной разработки)
+# CELERY_BROKER_URL = 'django-db'
+# CELERY_RESULT_BACKEND = 'django-db'
+#
+# # ✅ Для Windows: используем solo pool (избегает ошибок multiprocessing)
+# CELERY_WORKER_POOL = 'solo'
+# CELERYD_CONCURRENCY = 1
+#
+# # ✅ Планировщик для периодических задач
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
+#
+# # ✅ Timezone (важно для расписания)
+# CELERY_TIMEZONE = 'Europe/Moscow'  # Или ваш часовой пояс
 
-LOGIN_URL = '/admin/login/'
+# LOGIN_URL = '/admin/login/'

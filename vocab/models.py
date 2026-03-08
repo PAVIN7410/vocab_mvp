@@ -8,6 +8,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from bot.image_generator import fetch_image_for_word
+from vocab.models import Repetition
 from words.models import Word
 
 
@@ -23,8 +24,9 @@ class TelegramUser(models.Model):
     Пользователь Telegram, связанный (опционально) с Django User.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
-    telegram_id = models.BigIntegerField(unique=True)
-    username = models.CharField(max_length=128, blank=True, null=True)
+    telegram_id = models.CharField(max_length=50, unique=True)  # ← Строка!
+    username = models.CharField(max_length=255, blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -184,36 +186,31 @@ def create_repetition_and_card_image(sender, instance: Card, created: bool, **kw
     instance.image.save(django_file.name, django_file, save=True)
 
 
+
 @receiver(post_save, sender=Word)
 def create_cards_for_all_users(sender, instance: Word, created: bool, **kwargs):
-    """
-    При создании нового слова (words.Word) оно автоматически
-    становится карточкой для ВСЕХ зарегистрированных TelegramUser.
-    """
+    """При создании слова — создаёт карточку ТОЛЬКО для владельца."""
+
     if not created:
         return
+    from vocab.models import Card
 
-    try:
-        all_users = TelegramUser.objects.all()
+    # ⚠️ Если у слова нет пользователя — ничего не делаем!
+    if not instance.user:
+        print(f"⚠️ СЛОВО БЕЗ ПОЛЬЗОВАТЕЛЯ: {instance.text}")
+        return
 
-        if not all_users.exists():
-            print("DEBUG: Новых пользователей пока нет. Карточки не созданы.")
-            return
+    # ✅ Создаём ОДНУ карточку ДЛЯ ВЛАДЕЛЬЦА
+    card, _ = Card.objects.get_or_create(
+        owner=instance.user,  # ← Владелец из формы
+        word=instance.text,
+        defaults={
+            'translation': instance.translation,
+            'difficulty': 'beginner',
+        }
+    )
 
-        created_count = 0
-        for tg_user in all_users:
-            _, card_created = Card.objects.get_or_create(
-                owner=tg_user,
-                word=instance.text,
-                defaults={
-                    'translation': instance.translation,
-                    'difficulty': 'beginner',
-                }
-            )
-            if card_created:
-                created_count += 1
-
-        print(f"✅ Слово '{instance.text}' успешно добавлено {created_count} пользователям.")
-
-    except Exception as e:
-        print(f"❌ ОШИБКА В СИГНАЛЕ create_cards_for_all_users: {e}")
+    if _:
+        print(f"✅ Карточка создана для {instance.user.username} — {instance.text}")
+    else:
+        print(f"ℹ️ Карточка уже существовала: {instance.text}")

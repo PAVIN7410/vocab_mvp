@@ -28,10 +28,9 @@ git clone <your-repo-url>
 cd vocab_mvp
 python -m venv venv
 source venv/bin/activate  # Для Windows: venv\Scripts\activate
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 Используйте код с осторожностью.
-pip install --upgrade pip setuptools wheel
-
 
 2. Настройка окружения
 Создайте файл .env в корне проекта и добавьте ваши ключи:
@@ -45,17 +44,13 @@ python manage.py makemigrations
 python manage.py migrate
 Используйте код с осторожностью.
 
-4. Создай супер пользователя
-python manage.py createsuperuser
-пароль будет невидимый
-
-5. Запуск проекта
+4. Запуск проекта
 Запуск веб-панели:
 bash
 python manage.py runserver
 Используйте код с осторожностью.
 
-6.Запуск Telegram-бота (в отдельном терминале):
+5.Запуск Telegram-бота (в отдельном терминале):
 bash
 python bot/telegram_bot.py
 Используйте код с осторожностью.
@@ -65,4 +60,4 @@ python bot/telegram_bot.py
 📝 Лицензия
 MIT
 
-Чтобы открывались все страницы надо перейти в бота: 💬 Telegram бот и в меню выбрать "Start"
+Чтобы зарегистрироваться на сайте надо перейти в бота: 💬 Telegram бот и в меню выбрать "Start"
