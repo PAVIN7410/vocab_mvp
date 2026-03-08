@@ -1,46 +1,41 @@
 # bot/image_generator.py
-import tempfile
+
+import urllib.parse
+
+import requests
+from django.core.files import File
+from django.core.files.temp import NamedTemporaryFile
+
+POLLINATIONS_BASE = "https://image.pollinations.ai/prompt"
 
 
-def fetch_image_for_word(word_text, translation):
-    """Генерирует картинку через Pollinations и возвращает Django File"""
+def fetch_image_for_word(word: str, translation: str | None = None) -> File | None:
+    """
+    Пытается получить картинку через Pollinations по слову/переводу.
+    Возвращает Django File, готовый для ImageField, либо None при ошибке.
+    """
+    # Собираем понятный prompt
+    if translation:
+        prompt = f"{word} ({translation})"
+    else:
+        prompt = word
+
+    encoded_prompt = urllib.parse.quote(prompt)
+    url = f"{POLLINATIONS_BASE}/{encoded_prompt}"
+
+    print(f"[Pollinations] Запрос изображения: {url}")
 
     try:
-        import requests
-
-        # Формируем запрос к Pollinations
-        prompt = f"{word_text} ({translation})"
-        url = f"https://image.pollinations.ai/prompt/{prompt}?nologo=true"
-
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
-            print(f"⚠️ Pollinations ошибка: {response.status_code}")
-            return None
-
-        # Создаём временный файл ПО-НОВОМУ (совместимо с Python 3.14)
-        img_temp = tempfile.NamedTemporaryFile(
-            suffix='.jpg',  # ✅ Вместо delete=True
-            mode='wb',
-            delete=False  # ✅ Явно отключаем автоудаление
-        )
-
-        img_temp.write(response.content)
-        img_temp.close()
-
-        # Возвращаем как Django File
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        file = SimpleUploadedFile(
-            name=f"{word_text}.jpg",
-            content=response.content,
-            content_type="image/jpeg"
-        )
-
-        # Удаляем временный файл сразу после загрузки
-        import os
-        os.remove(img_temp.name)
-
-        return file
-
-    except Exception as e:
-        print(f"Ошибка генерации картинки: {e}")
+        resp = requests.get(url, timeout=40)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        # НЕ бросаем исключение наружу, только логируем
+        print(f"[Pollinations] Ошибка запроса: {e}")
         return None
+
+    img_temp = NamedTemporaryFile(delete=True)
+    img_temp.write(resp.content)
+    img_temp.flush()
+
+    return File(img_temp, name="pollinations_image.jpg")
+
