@@ -8,8 +8,6 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from bot.image_generator import fetch_image_for_word
-from vocab.models import Repetition
-from words.models import Word
 
 
 class SomeModel(models.Model):
@@ -187,13 +185,13 @@ def create_repetition_and_card_image(sender, instance: Card, created: bool, **kw
 
 
 
-@receiver(post_save, sender=Word)
-def create_cards_for_all_users(sender, instance: Word, created: bool, **kwargs):
+@receiver(post_save, sender='words.Word')
+def create_cards_for_all_users(sender, instance, created: bool, **kwargs):
     """При создании слова — создаёт карточку ТОЛЬКО для владельца."""
 
     if not created:
         return
-    from vocab.models import Card
+    #from vocab.models import Card
 
     # ⚠️ Если у слова нет пользователя — ничего не делаем!
     if not instance.user:

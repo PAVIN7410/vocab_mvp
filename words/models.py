@@ -6,7 +6,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from bot.image_generator import fetch_image_for_word
-from vocab.models import TelegramUser
+
 
 
 def word_image_upload_path(instance, filename):
@@ -45,6 +45,7 @@ class Word(models.Model):
         """Автосвязка к основному пользователю если нет"""
         if not self.user:
             try:
+                from vocab.models import TelegramUser
                 main_user = TelegramUser.objects.first()
                 if main_user:
                     self.user = main_user

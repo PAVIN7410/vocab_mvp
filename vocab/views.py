@@ -4,6 +4,8 @@ import re
 from random import choice
 
 from django.db.models import Count
+from django.http import HttpResponse, HttpResponseRedirect, HttpRequest
+from django.shortcuts import render, redirect
 from django.http import HttpResponseRedirect, HttpRequest
 from django.urls import reverse
 from django.utils import timezone

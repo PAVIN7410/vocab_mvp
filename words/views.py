@@ -17,8 +17,9 @@ from django.urls import reverse
 from django.urls import reverse_lazy
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import (
+    DetailView,
     UpdateView,
-    DeleteView
+    DeleteView,
 )
 from django.views.generic.edit import CreateView
 from django.views.generic.list import ListView
@@ -142,6 +143,22 @@ class WordListView(LoginRequiredMixin, ListView):
             return qs
         # Если нет пользователя — показываем все слова
         return Word.objects.all().order_by('-id')
+
+
+
+class WordDetailView(LoginRequiredMixin, DetailView):
+    model = Word
+    template_name = 'words/word_detail.html'
+    context_object_name = 'word'
+
+    def get_queryset(self):
+        tg_user = get_tg_user(self.request)
+
+        if not tg_user:
+            return Word.objects.none()
+
+        return Word.objects.filter(user=tg_user)
+
 
 
 class WordCreateView(LoginRequiredMixin, CreateView):
@@ -428,3 +445,4 @@ def settings_view(request):
         'settings': settings,
         'saved': request.GET.get('saved')
     })
+
